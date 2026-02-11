@@ -134,18 +134,20 @@ def theme_keyboard(section, index, total):
 @dp.message(CommandStart())
 async def start(message: Message):
     user_id = ensure_user(message.from_user)
+    user_name = message.from_user.first_name or "друг"
 
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
         if member.status in ("member", "administrator", "creator"):
             users[user_id]["subscribed"] = True
             save_users()
-            await message.answer("😋 выбери:", reply_markup=menu_keyboard())
+            await message.answer(f"Привет, {user_name}! 😋 выбери:", reply_markup=menu_keyboard())
             return
     except:
         pass
 
-    await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
+    await message.answer(f"Привет, {user_name}! ❣️ Подпишись:", reply_markup=subscribe_keyboard())
+
 
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
