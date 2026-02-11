@@ -80,14 +80,71 @@ async def ensure_subscribed(call: CallbackQuery) -> bool:
     )
     return False
 
+
 # =========================
-# ДАННЫЕ ТЕМ
+# ДАННЫЕ ТЕМ ПО УСТРОЙСТВАМ
 # =========================
-SECTION_DATA = {
-    "аниме": [{"title": "Anime Theme 1", "url": "https://t.me"}],
-    "котики": [{"title": "Cats Theme 1", "url": "https://t.me"}],
-    "пошлые": [{"title": "Hot Theme 1", "url": "https://t.me"}],
+# Формат: {"title": "Название", "file": "путь_к_файлу", "note": "текст для пользователя"}
+SECTION_DATA_IOS = {
+    "аниме": [
+        {"title": "Anime Theme 1", "file": "themes/ios/anime1.ttheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
+    ],
+    "котики": [
+        {"title": "Cats Theme 1", "file": "themes/ios/cat1.ttheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
+    ],
 }
+
+SECTION_DATA_ANDROID = {
+    "аниме": [
+        {"title": "Anime Theme 1", "file": "themes/android/anime1.atheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
+    ],
+    "котики": [
+        {"title": "Cats Theme 1", "file": "themes/android/cat1.atheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
+    ],
+}
+
+SECTION_DATA_PC = {
+    "аниме": [
+        {"title": "Anime Theme 1", "file": "themes/pc/anime1.pctheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
+    ],
+    "котики": [
+        {"title": "Cats Theme 1", "file": "themes/pc/cat1.pctheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
+    ],
+}
+
+# =========================
+# Кнопка "Установить" теперь отправляет файл
+# =========================
+@dp.callback_query(F.data.startswith("install_"))
+async def install(call: CallbackQuery):
+    user_id = ensure_user(call.from_user)
+    if not await ensure_subscribed(call):
+        return
+
+    # Определяем устройство пользователя
+    device = users[user_id].get("device")
+    if device == "iphone":
+        section_data = SECTION_DATA_IOS
+    elif device == "android":
+        section_data = SECTION_DATA_ANDROID
+    else:
+        section_data = SECTION_DATA_PC
+
+    parts = call.data.split("_")
+    section = parts[1]
+    index = int(parts[2])
+    item = section_data[section][index]
+
+    file_path = item["file"]
+    note = item["note"]
+
+    if os.path.exists(file_path):
+        await call.message.answer_document(open(file_path, "rb"), caption=note)
+    else:
+        await call.message.answer(f"❌ Файл {file_path} не найден!")
+
+    await call.answer("Тема отправлена ✅", show_alert=True)
+
 
 # =========================
 # КЛАВИАТУРЫ
