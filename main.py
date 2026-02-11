@@ -208,6 +208,12 @@ async def add_bot(call: CallbackQuery):
 async def noop(call: CallbackQuery):
     await call.answer(cache_time=1)
 
+@dp.callback_query(F.data == "back_menu")
+async def back_to_menu(call: CallbackQuery):
+    await call.message.edit_text(
+        "😋 выбери:",
+        reply_markup=menu_keyboard()
+    )
 # =========================
 # АДМИН ПАНЕЛЬ
 # =========================
