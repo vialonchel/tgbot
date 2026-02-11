@@ -75,10 +75,12 @@ async def ensure_subscribed(call: CallbackQuery):
             db["users"][uid]["subscribed"] = True
             save_users()
             return True
-    except:
+    except Exception:
         pass
-    await call.message.edit_text("❣️ Подпишись:", reply_markup=subscribe_keyboard())
+    # Не редактируем сообщение, просто показываем алерт
+    await call.answer("❣️ Подпишись на канал и нажми кнопку снова", show_alert=True)
     return False
+
 
 # =========================
 # КЛАВИАТУРЫ
@@ -120,10 +122,9 @@ def themes_keyboard(device: str) -> InlineKeyboardMarkup:
     for file in os.listdir(folder):
         if file.startswith("."):
             continue
-        kb.add(InlineKeyboardButton(
-            text=file,
-            callback_data=f"install_{device}_{file}"
-        ))
+        filename_no_ext = os.path.splitext(file)[0]
+        kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{filename_no_ext}"))
+
     kb.add(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
     return kb
 
@@ -141,15 +142,17 @@ async def start(message: Message):
 
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
-        if member.status in ("member", "administrator", "creator"):
-            db["users"][str(message.from_user.id)]["subscribed"] = True
-            save_users()
-            await message.answer("😋 выбери:", reply_markup=menu_keyboard())
-            return
-    except:
-        pass
+        is_subscribed = member.status in ("member", "administrator", "creator")
+    except Exception:
+        is_subscribed = False
 
-    await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
+    if is_subscribed:
+        db["users"][str(message.from_user.id)]["subscribed"] = True
+        save_users()
+        await message.answer("😋 выбери:", reply_markup=menu_keyboard())
+    else:
+        await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
+
 
 @dp.message(Command("admin"))
 async def admin(message: Message):
@@ -282,4 +285,6 @@ async def main():
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    asyncio.get_event_loop().run_until_complete(main())
