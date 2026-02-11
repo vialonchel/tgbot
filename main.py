@@ -55,6 +55,30 @@ def ensure_user(tg_user):
     return user_id
 
 # =========================
+# ПРОВЕРКА ПОДПИСКИ (БЕЗ ХЕНДЛЕРА!)
+# =========================
+async def ensure_subscribed(call: CallbackQuery) -> bool:
+    user_id = ensure_user(call.from_user)
+
+    if users[user_id]["subscribed"]:
+        return True
+
+    try:
+        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
+        if member.status in ("member", "administrator", "creator"):
+            users[user_id]["subscribed"] = True
+            save_users()
+            return True
+    except:
+        pass
+
+    await call.message.edit_text(
+        "❣️ Для доступа подпишись на канал:",
+        reply_markup=subscribe_keyboard()
+    )
+    return False
+
+# =========================
 # ДАННЫЕ ТЕМ
 # =========================
 SECTION_DATA = {
@@ -105,38 +129,6 @@ def theme_keyboard(section, index, total):
     ])
 
 # =========================
-# ОБЯЗАТЕЛЬНАЯ ПОДПИСКА (GLOBAL)
-# =========================
-@dp.callback_query()
-async def subscription_guard(call: CallbackQuery):
-    user_id = ensure_user(call.from_user)
-
-    # кнопка проверки подписки — всегда пропускаем
-    if call.data == "check_sub":
-        return
-
-    # ✅ ЕСЛИ МЫ УЖЕ ЗНАЕМ, ЧТО ПОДПИСАН — НЕ МЕШАЕМ
-    if users[user_id].get("subscribed"):
-        return
-
-    # ❗ только если НЕ подписан — проверяем реально
-    try:
-        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
-        if member.status in ("member", "administrator", "creator"):
-            users[user_id]["subscribed"] = True
-            save_users()
-            return
-    except:
-        pass
-
-    # ❌ всё ещё не подписан — показываем экран подписки
-    await call.message.edit_text(
-        "❣️ Для доступа к боту подпишись на канал:",
-        reply_markup=subscribe_keyboard()
-    )
-    raise Exception
-    
-# =========================
 # /start
 # =========================
 @dp.message(CommandStart())
@@ -158,37 +150,48 @@ async def start(message: Message):
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
 # =========================
-
 @dp.callback_query(F.data == "check_sub")
 async def check_sub(call: CallbackQuery):
     user_id = ensure_user(call.from_user)
 
-    member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
-    if member.status in ("member", "administrator", "creator"):
-        users[user_id]["subscribed"] = True
-        save_users()
+    try:
+        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
+        if member.status in ("member", "administrator", "creator"):
+            users[user_id]["subscribed"] = True
+            save_users()
+            await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+            return
+    except:
+        pass
 
-        # ✅ сразу возвращаем в меню
-        await call.message.edit_text(
-            "😋 выбери:",
-            reply_markup=menu_keyboard()
-        )
-    else:
-        await call.answer("Ты ещё не подписался 😢", show_alert=True)
+    await call.answer("Ты ещё не подписался 😢", show_alert=True)
 
 # =========================
 # ТЕМЫ → УСТРОЙСТВО
 # =========================
 @dp.callback_query(F.data == "themes")
 async def choose_device(call: CallbackQuery):
-    await call.message.edit_text("С какого девайса?", reply_markup=device_keyboard())
+    if not await ensure_subscribed(call):
+        return
+
+    await call.message.edit_text(
+        "С какого девайса?",
+        reply_markup=device_keyboard()
+    )
 
 @dp.callback_query(F.data.startswith("device_"))
 async def choose_section(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+
     user_id = ensure_user(call.from_user)
     users[user_id]["device"] = call.data.split("_")[1]
     save_users()
-    await call.message.edit_text("Выбери раздел:", reply_markup=sections_keyboard())
+
+    await call.message.edit_text(
+        "Выбери раздел:",
+        reply_markup=sections_keyboard()
+    )
 
 # =========================
 # ПОКАЗ ТЕМ
@@ -196,9 +199,11 @@ async def choose_section(call: CallbackQuery):
 @dp.callback_query(F.data.startswith("section_"))
 @dp.callback_query(F.data.startswith("nav_"))
 async def show_theme(call: CallbackQuery):
-    parts = call.data.split("_")
-    section = parts[1]
-    index = int(parts[2])
+    if not await ensure_subscribed(call):
+        return
+
+    _, section, index = call.data.split("_")
+    index = int(index)
 
     items = SECTION_DATA[section]
     index %= len(items)
@@ -216,6 +221,9 @@ async def show_theme(call: CallbackQuery):
 # =========================
 @dp.callback_query(F.data.startswith("install_"))
 async def install(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+
     await call.answer("Тема установлена ✅", show_alert=True)
 
 @dp.callback_query(F.data == "add_bot")
@@ -232,6 +240,7 @@ async def back_to_menu(call: CallbackQuery):
         "😋 выбери:",
         reply_markup=menu_keyboard()
     )
+
 # =========================
 # АДМИН ПАНЕЛЬ
 # =========================
@@ -265,8 +274,13 @@ async def admin(message: Message):
     )
 
     for d, v in sorted(daily.items()):
-        conv = round(v["sub"] / v["started"] * 100, 2)
-        text += f"\n<b>{d}</b>\nЗапуски: {v['started']}\nПодписки: {v['sub']}\nКонверсия: {conv}%\n"
+        conv = round(v["sub"] / v["started"] * 100, 2) if v["started"] else 0
+        text += (
+            f"\n<b>{d}</b>\n"
+            f"Запуски: {v['started']}\n"
+            f"Подписки: {v['sub']}\n"
+            f"Конверсия: {conv}%\n"
+        )
 
     await message.answer(text)
 
