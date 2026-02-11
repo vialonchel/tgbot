@@ -25,7 +25,7 @@ bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
 
 class BroadcastStates(StatesGroup):
-    waiting_for_message = State()  # Ожидаем сообщение от админа для рассылки
+    waiting_for_message = State()
 
 # =========================
 # ХРАНИЛИЩЕ
@@ -61,10 +61,8 @@ def ensure_user(tg_user):
 # =========================
 async def ensure_subscribed(call: CallbackQuery) -> bool:
     user_id = ensure_user(call.from_user)
-
     if users[user_id]["subscribed"]:
         return True
-
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
         if member.status in ("member", "administrator", "creator"):
@@ -80,78 +78,30 @@ async def ensure_subscribed(call: CallbackQuery) -> bool:
     )
     return False
 
-
 # =========================
 # ДАННЫЕ ТЕМ ПО УСТРОЙСТВАМ
 # =========================
-# Формат: {"title": "Название", "file": "путь_к_файлу", "note": "текст для пользователя"}
 SECTION_DATA_IOS = {
-    "аниме": [
-        {"title": "Anime Theme 1", "file": "themes/ios/anime1.ttheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
-    ],
-    "котики": [
-        {"title": "Cats Theme 1", "file": "themes/ios/cat1.ttheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
-    ],
+    "аниме": [{"title": "Anime Theme 1", "file": "themes/ios/anime1.ttheme", "note": "Нажми для установки!\nТема создана в <a href='https://t.me/TT_temki_bot'>@TT_temki_bot</a> 😉"}],
+    "котики": [{"title": "Cats Theme 1", "file": "themes/ios/cat1.ttheme", "note": "Нажми для установки!\nТема создана в <a href='https://t.me/TT_temki_bot'>@TT_temki_bot</a> 😉"}],
 }
 
 SECTION_DATA_ANDROID = {
-    "аниме": [
-        {"title": "Anime Theme 1", "file": "themes/android/anime1.atheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
-    ],
-    "котики": [
-        {"title": "Cats Theme 1", "file": "themes/android/cat1.atheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
-    ],
+    "аниме": [{"title": "Anime Theme 1", "file": "themes/android/anime1.atheme", "note": "Нажми для установки!\nТема создана в <a href='https://t.me/TT_temki_bot'>@TT_temki_bot</a> 😉"}],
+    "котики": [{"title": "Cats Theme 1", "file": "themes/android/cat1.atheme", "note": "Нажми для установки!\nТема создана в <a href='https://t.me/TT_temki_bot'>@TT_temki_bot</a> 😉"}],
 }
 
 SECTION_DATA_PC = {
-    "аниме": [
-        {"title": "Anime Theme 1", "file": "themes/pc/anime1.pctheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
-    ],
-    "котики": [
-        {"title": "Cats Theme 1", "file": "themes/pc/cat1.pctheme", "note": "Нажми для установки!\nТема создана в @TT_temki_bot 😉"},
-    ],
+    "аниме": [{"title": "Anime Theme 1", "file": "themes/pc/anime1.pctheme", "note": "Нажми для установки!\nТема создана в <a href='https://t.me/TT_temki_bot'>@TT_temki_bot</a> 😉"}],
+    "котики": [{"title": "Cats Theme 1", "file": "themes/pc/cat1.pctheme", "note": "Нажми для установки!\nТема создана в <a href='https://t.me/TT_temki_bot'>@TT_temki_bot</a> 😉"}],
 }
-
-# =========================
-# Кнопка "Установить" теперь отправляет файл
-# =========================
-@dp.callback_query(F.data.startswith("install_"))
-async def install(call: CallbackQuery):
-    user_id = ensure_user(call.from_user)
-    if not await ensure_subscribed(call):
-        return
-
-    # Определяем устройство пользователя
-    device = users[user_id].get("device")
-    if device == "iphone":
-        section_data = SECTION_DATA_IOS
-    elif device == "android":
-        section_data = SECTION_DATA_ANDROID
-    else:
-        section_data = SECTION_DATA_PC
-
-    parts = call.data.split("_")
-    section = parts[1]
-    index = int(parts[2])
-    item = section_data[section][index]
-
-    file_path = item["file"]
-    note = item["note"]
-
-    if os.path.exists(file_path):
-        await call.message.answer_document(open(file_path, "rb"), caption=note)
-    else:
-        await call.message.answer(f"❌ Файл {file_path} не найден!")
-
-    await call.answer("Тема отправлена ✅", show_alert=True)
-
 
 # =========================
 # КЛАВИАТУРЫ
 # =========================
 def subscribe_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✉️ Подписаться", url="https://t.me/wursix")],
+        [InlineKeyboardButton(text="✉️ Подписаться", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
         [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_sub")]
     ])
 
@@ -167,12 +117,15 @@ def device_keyboard():
         [InlineKeyboardButton(text="Компьютер", callback_data="device_pc")]
     ])
 
-def sections_keyboard():
+def sections_keyboard(device):
+    if device == "iphone":
+        data = SECTION_DATA_IOS
+    elif device == "android":
+        data = SECTION_DATA_ANDROID
+    else:
+        data = SECTION_DATA_PC
     return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=s, callback_data=f"section_{s}_0")]
-            for s in SECTION_DATA
-        ]
+        inline_keyboard=[[InlineKeyboardButton(text=s, callback_data=f"section_{s}_0")] for s in data]
     )
 
 def theme_keyboard(section, index, total):
@@ -195,10 +148,8 @@ async def start(message: Message):
     user_id = ensure_user(message.from_user)
     user_name = message.from_user.first_name or "друг"
 
-    # Приветствие отдельным сообщением
     await message.answer(f"Привет, {user_name}!")
 
-    # Проверка подписки
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
         if member.status in ("member", "administrator", "creator"):
@@ -226,7 +177,6 @@ async def check_sub(call: CallbackQuery):
             return
     except:
         pass
-
     await call.answer("Ты ещё не подписался 😢", show_alert=True)
 
 # =========================
@@ -244,10 +194,10 @@ async def choose_section(call: CallbackQuery):
     user_id = ensure_user(call.from_user)
     if not await ensure_subscribed(call):
         return
-
-    users[user_id]["device"] = call.data.split("_")[1]
+    device = call.data.split("_")[1]
+    users[user_id]["device"] = device
     save_users()
-    await call.message.edit_text("Выбери раздел:", reply_markup=sections_keyboard())
+    await call.message.edit_text("Выбери раздел:", reply_markup=sections_keyboard(device))
 
 # =========================
 # ПОКАЗ ТЕМ
@@ -257,42 +207,53 @@ async def show_theme(call: CallbackQuery):
     user_id = ensure_user(call.from_user)
     if not await ensure_subscribed(call):
         return
+    device = users[user_id].get("device", "pc")
+    if device == "iphone":
+        section_data = SECTION_DATA_IOS
+    elif device == "android":
+        section_data = SECTION_DATA_ANDROID
+    else:
+        section_data = SECTION_DATA_PC
 
     parts = call.data.split("_")
     section = parts[1]
     index = int(parts[2])
-
-    items = SECTION_DATA[section]
+    items = section_data[section]
     index %= len(items)
-
     item = items[index]
     text = f"<b>{item['title']}</b>\n{index+1} из {len(items)}"
 
-    await call.message.edit_text(
-        text,
-        reply_markup=theme_keyboard(section, index, len(items))
-    )
+    await call.message.edit_text(text, reply_markup=theme_keyboard(section, index, len(items)))
 
 # =========================
 # УСТАНОВКА
 # =========================
 @dp.callback_query(F.data.startswith("install_"))
 async def install(call: CallbackQuery):
+    user_id = ensure_user(call.from_user)
     if not await ensure_subscribed(call):
         return
-    await call.answer("Тема установлена ✅", show_alert=True)
 
-@dp.callback_query(F.data == "add_bot")
-async def add_bot(call: CallbackQuery):
-    await call.answer("Скоро 😏", show_alert=True)
+    device = users[user_id].get("device", "pc")
+    if device == "iphone":
+        section_data = SECTION_DATA_IOS
+    elif device == "android":
+        section_data = SECTION_DATA_ANDROID
+    else:
+        section_data = SECTION_DATA_PC
 
-@dp.callback_query(F.data == "noop")
-async def noop(call: CallbackQuery):
-    await call.answer(cache_time=1)
+    parts = call.data.split("_")
+    section = parts[1]
+    index = int(parts[2])
+    item = section_data[section][index]
+    file_path = item["file"]
+    note = item["note"]
 
-@dp.callback_query(F.data == "back_menu")
-async def back_to_menu(call: CallbackQuery):
-    await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+    if os.path.exists(file_path):
+        await call.message.answer_document(open(file_path, "rb"), caption=note, parse_mode="HTML")
+        await call.answer("Тема отправлена ✅", show_alert=True)
+    else:
+        await call.message.answer(f"❌ Файл {file_path} не найден!")
 
 # =========================
 # РАССЫЛКА
@@ -308,33 +269,19 @@ async def broadcast_button(call: CallbackQuery, state: FSMContext):
 async def process_broadcast(message: Message, state: FSMContext):
     if message.from_user.id not in ADMINS:
         return
-
     await state.clear()
 
     users_list = list(users.keys())
     sent_count = 0
-
     photo = message.photo[-1] if message.photo else None
-    caption = message.caption if message.caption else None
+    caption = message.caption or message.text
 
     for user_id in users_list:
         try:
             if photo:
-                # Отправляем фото отдельно
-                await bot.send_photo(chat_id=int(user_id), photo=photo.file_id)
-                # Текст отдельно с HTML разметкой
-                if caption or message.text:
-                    await bot.send_message(
-                        chat_id=int(user_id),
-                        text=caption or message.text,
-                        parse_mode="HTML"
-                    )
+                await bot.send_photo(chat_id=int(user_id), photo=photo.file_id, caption=caption, parse_mode="HTML")
             else:
-                await bot.send_message(
-                    chat_id=int(user_id),
-                    text=message.text,
-                    parse_mode="HTML"
-                )
+                await bot.send_message(chat_id=int(user_id), text=caption, parse_mode="HTML")
             sent_count += 1
         except Exception as e:
             print(f"Не удалось отправить {user_id}: {e}")
@@ -354,7 +301,6 @@ async def admin(message: Message):
 
     today = datetime.now(timezone.utc).date()
     cutoff = today - timedelta(days=6)
-
     daily = {}
     for u in users.values():
         d = datetime.strptime(u["first_start"], "%Y-%m-%d").date()
@@ -366,27 +312,14 @@ async def admin(message: Message):
         if u["subscribed"]:
             daily[k]["sub"] += 1
 
-    stats_text = (
-        f"📊 <b>Статистика</b>\n\n"
-        f"👤 Пользователей: {total}\n"
-        f"✅ Подписались: {subs}\n\n"
-        f"<b>По дням:</b>\n"
-    )
-
+    stats_text = f"📊 <b>Статистика</b>\n\n👤 Пользователей: {total}\n✅ Подписались: {subs}\n\n<b>По дням:</b>\n"
     for d, v in sorted(daily.items()):
         conv = round(v["sub"] / v["started"] * 100, 2) if v["started"] else 0
-        stats_text += (
-            f"\n<b>{d}</b>\n"
-            f"Запуски: {v['started']}\n"
-            f"Подписки: {v['sub']}\n"
-            f"Конверсия: {conv}%\n"
-        )
+        stats_text += f"\n<b>{d}</b>\nЗапуски: {v['started']}\nПодписки: {v['sub']}\nКонверсия: {conv}%\n"
 
-    # Кнопка рассылки
     admin_kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Сделать рассылку", callback_data="start_broadcast")]
     ])
-
     await message.answer(stats_text, reply_markup=admin_kb)
 
 # =========================
