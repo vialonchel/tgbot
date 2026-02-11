@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -80,6 +80,38 @@ async def ensure_subscribed(call: CallbackQuery):
     return False
 
 # =========================
+# кнопка назад из админки
+# =========================
+
+@dp.callback_query(F.data == "back_menu")
+async def back_menu(call: CallbackQuery):
+    await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+
+@dp.callback_query(F.data == "back_admin")
+async def back_admin(call: CallbackQuery):
+    await call.message.edit_text("выбери:", reply_markup=admin_keyboard())
+
+# =========================
+# ПРОВЕРКА ПОДПИСКИ
+# =========================
+
+@dp.callback_query(F.data == "check_sub")
+async def check_subscription(call: CallbackQuery):
+    uid = ensure_user(call.from_user)
+    try:
+        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
+        if member.status in ("member", "administrator", "creator"):
+            db["users"][uid]["subscribed"] = True
+            save_users()
+            await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+            return
+    except:
+        pass
+
+    await call.answer("❌ Ты ещё не подписан", show_alert=True)
+    
+
+# =========================
 # КЛАВИАТУРЫ
 # =========================
 def subscribe_keyboard():
@@ -104,31 +136,34 @@ def admin_keyboard():
 # =========================
 # /start (кампании)
 # =========================
-@dp.message(CommandStart(deep_link=True))
-async def start_deep(message: Message, command: CommandStart):
-    campaign = command.args or "organic"
+@dp.message(Command("start"))
+async def start(message: Message):
+    # campaign по умолчанию
+    campaign = "organic"
+
+    # если пришли по ссылке /start xxx
+    if message.text and " " in message.text:
+        campaign = message.text.split(" ", 1)[1]
+
     if campaign not in db["campaigns"]:
         campaign = "organic"
+
     ensure_user(message.from_user, campaign)
-    await start_common(message)
 
-@dp.message(CommandStart())
-async def start_plain(message: Message):
-    ensure_user(message.from_user)
-    await start_common(message)
-
-async def start_common(message: Message):
+    # приветствие
     await message.answer(f"Привет, {message.from_user.first_name}!")
+
+    # проверка подписки
     try:
-        m = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
-        if m.status in ("member", "administrator", "creator"):
-            uid = str(message.from_user.id)
-            db["users"][uid]["subscribed"] = True
+        member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
+        if member.status in ("member", "administrator", "creator"):
+            db["users"][str(message.from_user.id)]["subscribed"] = True
             save_users()
             await message.answer("😋 выбери:", reply_markup=menu_keyboard())
             return
     except:
         pass
+
     await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
 
 # =========================
@@ -171,7 +206,7 @@ async def campaigns(call: CallbackQuery):
         text += f"\n• {c}\nhttps://t.me/{BOT_USERNAME}?start={c}"
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Создать кампанию", callback_data="new_campaign")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin")]
+        InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin")
     ])
     await call.message.edit_text(text, reply_markup=kb)
 
