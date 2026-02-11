@@ -119,18 +119,38 @@ async def choose_device(call: CallbackQuery):
 async def install_theme(call: CallbackQuery):
     if not await ensure_subscribed(call):
         return
+
     _, device, filename = call.data.split("_", 2)
-    path = f"themes/{device}/{filename}"
 
-    if not os.path.exists(path):
-        await call.answer("❌ Файл не найден", show_alert=True)
-        return
+    # определяем расширение файла по устройству
+    extensions = {
+        "ios": ".tgios-theme",
+        "android": ".attheme",
+        "windows": ".tgdesktop-theme"
+    }
 
-    with open(path, "rb") as f:
-        await bot.send_document(
-            call.from_user.id,
-            document=f,
-            caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉"
+    theme_file = f"themes/{device}/{filename}{extensions.get(device, '')}"
+    preview_file = f"themes/{device}/{filename}_preview.jpg"
+
+    # отправка превью
+    if os.path.exists(preview_file):
+        with open(preview_file, "rb") as f:
+            await bot.send_photo(
+                call.from_user.id,
+                photo=f,
+            )
+
+    # отправка темы
+    if os.path.exists(theme_file):
+        with open(theme_file, "rb") as f:
+            await bot.send_document(
+                call.from_user.id,
+                document=f,
+                caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉"
+            )
+    else:
+        await call.answer("❌ Файл темы не найден", show_alert=True)
+
         )
 
 def themes_keyboard(device: str) -> InlineKeyboardMarkup:
