@@ -14,7 +14,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 # =========================
 # НАСТРОЙКИ
 # =========================
-BOT_TOKEN = "TOKEN"
+BOT_TOKEN = "8554128234:AAHI-fEZi-B2C58O8ZKvg2oipDNcYcXYUvY"
 CHANNEL_USERNAME = "@wursix"
 USERS_FILE = "users.json"
 ADMINS = {913949366}
