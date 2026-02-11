@@ -138,6 +138,7 @@ async def install_theme(call: CallbackQuery):
             await bot.send_photo(
                 call.from_user.id,
                 photo=f,
+                caption="📌 Предпросмотр темы"
             )
 
     # отправка темы
@@ -150,8 +151,6 @@ async def install_theme(call: CallbackQuery):
             )
     else:
         await call.answer("❌ Файл темы не найден", show_alert=True)
-
-        )
 
 def themes_keyboard(device: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardMarkup(row_width=1)
