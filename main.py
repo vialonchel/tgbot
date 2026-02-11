@@ -133,6 +133,20 @@ async def install_theme(call: CallbackQuery):
             caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉"
         )
 
+def themes_keyboard(device: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    folder = f"themes/{device}/"
+    if not os.path.exists(folder):
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data="back_menu")]]
+        )
+    for file in os.listdir(folder):
+        kb.add(InlineKeyboardButton(
+            text=file,
+            callback_data=f"install_{device}_{file}"
+        ))
+    kb.add(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    return kb
 
 
 # =========================
@@ -191,13 +205,8 @@ def device_keyboard():
 # =========================
 @dp.message(Command("start"))
 async def start(message: Message):
-    # campaign по умолчанию
-    campaign = "organic"
-
-    # если пришли по ссылке /start xxx
-    if message.text and " " in message.text:
-        campaign = message.text.split(" ", 1)[1]
-
+    # получаем аргумент кампании, если есть
+    campaign = message.get_args() or "organic"
     if campaign not in db["campaigns"]:
         campaign = "organic"
 
