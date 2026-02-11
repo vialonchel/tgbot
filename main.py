@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,6 +9,7 @@ from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.storage.memory import MemoryStorage
 
 # =========================
 # НАСТРОЙКИ
@@ -23,7 +24,7 @@ BOT_USERNAME = "TT_temki_bot"
 # BOT
 # =========================
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
-dp = Dispatcher()
+dp = Dispatcher(storage=MemoryStorage())
 
 # =========================
 # FSM
@@ -69,8 +70,8 @@ async def ensure_subscribed(call: CallbackQuery):
     if db["users"][uid]["subscribed"]:
         return True
     try:
-        m = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
-        if m.status in ("member", "administrator", "creator"):
+        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
+        if member.status in ("member", "administrator", "creator"):
             db["users"][uid]["subscribed"] = True
             save_users()
             return True
@@ -78,115 +79,6 @@ async def ensure_subscribed(call: CallbackQuery):
         pass
     await call.message.edit_text("❣️ Подпишись:", reply_markup=subscribe_keyboard())
     return False
-
-# =========================
-# обработчики
-# =========================
-
-@dp.callback_query(F.data == "back_menu")
-async def back_menu(call: CallbackQuery):
-    await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
-
-@dp.callback_query(F.data.startswith("device_"))
-async def select_device(call: CallbackQuery):
-    if not await ensure_subscribed(call):
-        return
-
-    device = call.data.replace("device_", "")  # ios / android / windows
-
-    await call.message.edit_text(
-        "Выбери тему:",
-        reply_markup=themes_keyboard(device)
-    )
-
-
-@dp.callback_query(F.data == "back_admin")
-async def back_admin(call: CallbackQuery):
-    await call.message.edit_text("выбери:", reply_markup=admin_keyboard())
-
-@dp.callback_query(F.data == "themes")
-async def choose_device(call: CallbackQuery):
-    if not await ensure_subscribed(call):
-        return
-
-    await call.message.edit_text(
-        "С какого девайса ты?",
-        reply_markup=device_keyboard()
-    )
-
-
-@dp.callback_query(F.data.startswith("install_"))
-async def install_theme(call: CallbackQuery):
-    if not await ensure_subscribed(call):
-        return
-
-    _, device, filename = call.data.split("_", 2)
-
-    # определяем расширение файла по устройству
-    extensions = {
-        "ios": ".tgios-theme",
-        "android": ".attheme",
-        "windows": ".tgdesktop-theme"
-    }
-
-    theme_file = f"themes/{device}/{filename}{extensions.get(device, '')}"
-    preview_file = f"themes/{device}/{filename}_preview.jpg"
-
-    # отправка превью
-    if os.path.exists(preview_file):
-        with open(preview_file, "rb") as f:
-            await bot.send_photo(
-                call.from_user.id,
-                photo=f,
-                caption="📌 Предпросмотр темы"
-            )
-
-    # отправка темы
-    if os.path.exists(theme_file):
-        with open(theme_file, "rb") as f:
-            await bot.send_document(
-                call.from_user.id,
-                document=f,
-                caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉"
-            )
-    else:
-        await call.answer("❌ Файл темы не найден", show_alert=True)
-
-def themes_keyboard(device: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup(row_width=1)
-    folder = f"themes/{device}/"
-    if not os.path.exists(folder):
-        return InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data="back_menu")]]
-        )
-    for file in os.listdir(folder):
-        kb.add(InlineKeyboardButton(
-            text=file,
-            callback_data=f"install_{device}_{file}"
-        ))
-    kb.add(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
-    return kb
-
-
-# =========================
-# ПРОВЕРКА ПОДПИСКИ
-# =========================
-
-@dp.callback_query(F.data == "check_sub")
-async def check_subscription(call: CallbackQuery):
-    uid = ensure_user(call.from_user)
-    try:
-        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
-        if member.status in ("member", "administrator", "creator"):
-            db["users"][uid]["subscribed"] = True
-            save_users()
-            await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
-            return
-    except:
-        pass
-
-    await call.answer("❌ Ты ещё не подписан", show_alert=True)
-    
 
 # =========================
 # КЛАВИАТУРЫ
@@ -218,23 +110,35 @@ def device_keyboard():
         [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu")]
     ])
 
+def themes_keyboard(device: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardMarkup(row_width=1)
+    folder = f"themes/{device}/"
+    if not os.path.exists(folder):
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data="back_menu")]]
+        )
+    for file in os.listdir(folder):
+        if file.startswith("."):
+            continue
+        kb.add(InlineKeyboardButton(
+            text=file,
+            callback_data=f"install_{device}_{file}"
+        ))
+    kb.add(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    return kb
 
 # =========================
-# /start (кампании)
+# ОБРАБОТЧИКИ
 # =========================
 @dp.message(Command("start"))
 async def start(message: Message):
-    # получаем аргумент кампании, если есть
     campaign = message.get_args() or "organic"
     if campaign not in db["campaigns"]:
         campaign = "organic"
-
     ensure_user(message.from_user, campaign)
 
-    # приветствие
     await message.answer(f"Привет, {message.from_user.first_name}!")
 
-    # проверка подписки
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
         if member.status in ("member", "administrator", "creator"):
@@ -247,9 +151,6 @@ async def start(message: Message):
 
     await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
 
-# =========================
-# ADMIN
-# =========================
 @dp.message(Command("admin"))
 async def admin(message: Message):
     if message.from_user.id not in ADMINS:
@@ -257,29 +158,73 @@ async def admin(message: Message):
     await message.answer("выбери:", reply_markup=admin_keyboard())
 
 # =========================
-# СТАТИСТИКА
+# CALLBACKS
 # =========================
+@dp.callback_query(F.data == "back_menu")
+async def back_menu(call: CallbackQuery):
+    await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+
+@dp.callback_query(F.data.startswith("device_"))
+async def select_device(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    device = call.data.replace("device_", "")
+    await call.message.edit_text("Выбери тему:", reply_markup=themes_keyboard(device))
+
+@dp.callback_query(F.data == "themes")
+async def choose_device(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    await call.message.edit_text("С какого девайса ты?", reply_markup=device_keyboard())
+
+@dp.callback_query(F.data.startswith("install_"))
+async def install_theme(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    _, device, filename = call.data.split("_", 2)
+    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
+    theme_file = f"themes/{device}/{filename}{extensions.get(device, '')}"
+    preview_file = f"themes/{device}/{filename}_preview.jpg"
+
+    if os.path.exists(preview_file):
+        with open(preview_file, "rb") as f:
+            await bot.send_photo(call.from_user.id, photo=f, caption="📌 Предпросмотр темы")
+
+    if os.path.exists(theme_file):
+        with open(theme_file, "rb") as f:
+            await bot.send_document(call.from_user.id, document=f,
+                                    caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉")
+    else:
+        await call.answer("❌ Файл темы не найден", show_alert=True)
+
+@dp.callback_query(F.data == "check_sub")
+async def check_subscription(call: CallbackQuery):
+    uid = ensure_user(call.from_user)
+    try:
+        member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
+        if member.status in ("member", "administrator", "creator"):
+            db["users"][uid]["subscribed"] = True
+            save_users()
+            await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+            return
+    except:
+        pass
+    await call.answer("❌ Ты ещё не подписан", show_alert=True)
+
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
     users = db["users"]
     total = len(users)
     subs = sum(1 for u in users.values() if u["subscribed"])
-
     camp_stats = {}
     for u in users.values():
-        camp = u["campaign"]
-        camp_stats.setdefault(camp, 0)
-        camp_stats[camp] += 1
+        camp_stats[u["campaign"]] = camp_stats.get(u["campaign"], 0) + 1
 
     text = f"📊 <b>Статистика</b>\n\n👤 Пользователей: {total}\n✅ Подписались: {subs}\n\n<b>Кампании:</b>\n"
     for k, v in camp_stats.items():
         text += f"\n{k}: {v}"
-
     await call.message.edit_text(text, reply_markup=admin_keyboard())
 
-# =========================
-# КАМПАНИИ
-# =========================
 @dp.callback_query(F.data == "campaigns")
 async def campaigns(call: CallbackQuery):
     text = "<b>Кампании:</b>\n"
@@ -305,14 +250,8 @@ async def save_campaign(message: Message, state: FSMContext):
     db["campaigns"].append(name)
     save_users()
     await state.clear()
-    await message.answer(
-        f"✅ Кампания создана:\nhttps://t.me/{BOT_USERNAME}?start={name}",
-        reply_markup=admin_keyboard()
-    )
+    await message.answer(f"✅ Кампания создана:\nhttps://t.me/{BOT_USERNAME}?start={name}", reply_markup=admin_keyboard())
 
-# =========================
-# РАССЫЛКА
-# =========================
 @dp.callback_query(F.data == "start_broadcast")
 async def start_broadcast(call: CallbackQuery, state: FSMContext):
     if call.from_user.id not in ADMINS:
@@ -326,14 +265,14 @@ async def do_broadcast(message: Message, state: FSMContext):
     sent = 0
     for uid in db["users"]:
         try:
-            if message.photo:
+            if message.content_type == "photo":
                 await bot.send_photo(int(uid), message.photo[-1].file_id,
-                                     caption=message.caption, parse_mode="HTML")
+                                     caption=message.caption or "", parse_mode="HTML")
             else:
                 await bot.send_message(int(uid), message.text, parse_mode="HTML")
             sent += 1
         except:
-            pass
+            continue
     await message.answer(f"✅ Рассылка завершена ({sent})")
 
 # =========================
