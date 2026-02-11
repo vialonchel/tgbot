@@ -11,6 +11,10 @@ from aiogram.types import (
 from aiogram.filters import CommandStart, Command
 from aiogram.client.default import DefaultBotProperties
 
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+
 # =========================
 # НАСТРОЙКИ
 # =========================
@@ -24,6 +28,9 @@ ADMINS = {913949366}
 # =========================
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 dp = Dispatcher()
+
+class BroadcastStates(StatesGroup):
+    waiting_for_message = State()  # Ожидаем сообщение от админа для рассылки
 
 # =========================
 # ХРАНИЛИЩЕ
@@ -238,6 +245,49 @@ async def noop(call: CallbackQuery):
 async def back_to_menu(call: CallbackQuery):
     await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
 
+@dp.callback_query(F.data == "start_broadcast")
+async def broadcast_button(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMINS:
+        return
+
+    await call.message.edit_text("📤 Отправь сообщение для рассылки. Можно текст, эмодзи, ссылки, фото.")
+    await state.set_state(BroadcastStates.waiting_for_message)
+
+@dp.message(BroadcastStates.waiting_for_message)
+async def process_broadcast(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMINS:
+        return
+
+    await state.clear()  # завершаем состояние
+
+    users_list = list(users.keys())
+    sent_count = 0
+
+    photo = message.photo[-1] if message.photo else None
+    caption = message.caption if message.caption else None
+
+    for user_id in users_list:
+        try:
+            if photo:
+                await bot.send_photo(
+                    chat_id=int(user_id),
+                    photo=photo.file_id,
+                    caption=caption or message.text,
+                    parse_mode="HTML"
+                )
+            else:
+                await bot.send_message(
+                    chat_id=int(user_id),
+                    text=message.text,
+                    parse_mode="HTML"
+                )
+            sent_count += 1
+        except Exception as e:
+            print(f"Не удалось отправить {user_id}: {e}")
+
+    await message.answer(f"✅ Рассылка завершена. Отправлено пользователям: {sent_count}/{len(users_list)}")
+
+
 # =========================
 # АДМИН ПАНЕЛЬ
 # =========================
@@ -263,7 +313,7 @@ async def admin(message: Message):
         if u["subscribed"]:
             daily[k]["sub"] += 1
 
-    text = (
+    stats_text = (
         f"📊 <b>Статистика</b>\n\n"
         f"👤 Пользователей: {total}\n"
         f"✅ Подписались: {subs}\n\n"
@@ -272,14 +322,20 @@ async def admin(message: Message):
 
     for d, v in sorted(daily.items()):
         conv = round(v["sub"] / v["started"] * 100, 2) if v["started"] else 0
-        text += (
+        stats_text += (
             f"\n<b>{d}</b>\n"
             f"Запуски: {v['started']}\n"
             f"Подписки: {v['sub']}\n"
             f"Конверсия: {conv}%\n"
         )
 
-    await message.answer(text)
+    # Кнопка рассылки
+    admin_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Сделать рассылку", callback_data="start_broadcast")]
+    ])
+
+    await message.answer(stats_text, reply_markup=admin_kb)
+
 
 # =========================
 # ЗАПУСК
