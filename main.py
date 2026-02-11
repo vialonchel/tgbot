@@ -2,9 +2,8 @@ import asyncio
 import json
 import os
 from datetime import datetime, timezone
-
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
@@ -31,7 +30,6 @@ dp = Dispatcher(storage=MemoryStorage())
 # =========================
 class BroadcastStates(StatesGroup):
     waiting_for_message = State()
-
 class CampaignStates(StatesGroup):
     waiting_for_name = State()
 
@@ -81,7 +79,6 @@ async def ensure_subscribed(call: CallbackQuery):
     await call.answer("❣️ Подпишись на канал и нажми кнопку снова", show_alert=True)
     return False
 
-
 # =========================
 # КЛАВИАТУРЫ
 # =========================
@@ -124,7 +121,6 @@ def themes_keyboard(device: str) -> InlineKeyboardMarkup:
             continue
         filename_no_ext = os.path.splitext(file)[0]
         kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{filename_no_ext}"))
-
     kb.add(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
     return kb
 
@@ -133,26 +129,23 @@ def themes_keyboard(device: str) -> InlineKeyboardMarkup:
 # =========================
 @dp.message(Command("start"))
 async def start(message: Message):
-    campaign = message.get_args() or "organic"
+    args = message.text.split(maxsplit=1)
+    campaign = args[1] if len(args) > 1 else "organic"
     if campaign not in db["campaigns"]:
         campaign = "organic"
     ensure_user(message.from_user, campaign)
-
     await message.answer(f"Привет, {message.from_user.first_name}!")
-
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
         is_subscribed = member.status in ("member", "administrator", "creator")
     except Exception:
         is_subscribed = False
-
     if is_subscribed:
         db["users"][str(message.from_user.id)]["subscribed"] = True
         save_users()
         await message.answer("😋 выбери:", reply_markup=menu_keyboard())
     else:
         await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
-
 
 @dp.message(Command("admin"))
 async def admin(message: Message):
@@ -188,15 +181,11 @@ async def install_theme(call: CallbackQuery):
     extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
     theme_file = f"themes/{device}/{filename}{extensions.get(device, '')}"
     preview_file = f"themes/{device}/{filename}_preview.jpg"
-
     if os.path.exists(preview_file):
-        with open(preview_file, "rb") as f:
-            await bot.send_photo(call.from_user.id, photo=f, caption="📌 Предпросмотр темы")
-
+        await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр темы")
     if os.path.exists(theme_file):
-        with open(theme_file, "rb") as f:
-            await bot.send_document(call.from_user.id, document=f,
-                                    caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉")
+        await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
+                                caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉")
     else:
         await call.answer("❌ Файл темы не найден", show_alert=True)
 
@@ -216,13 +205,14 @@ async def check_subscription(call: CallbackQuery):
 
 @dp.callback_query(F.data == "admin_stats")
 async def admin_stats(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     users = db["users"]
     total = len(users)
     subs = sum(1 for u in users.values() if u["subscribed"])
     camp_stats = {}
     for u in users.values():
         camp_stats[u["campaign"]] = camp_stats.get(u["campaign"], 0) + 1
-
     text = f"📊 <b>Статистика</b>\n\n👤 Пользователей: {total}\n✅ Подписались: {subs}\n\n<b>Кампании:</b>\n"
     for k, v in camp_stats.items():
         text += f"\n{k}: {v}"
@@ -230,6 +220,8 @@ async def admin_stats(call: CallbackQuery):
 
 @dp.callback_query(F.data == "campaigns")
 async def campaigns(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
     text = "<b>Кампании:</b>\n"
     for c in db["campaigns"]:
         text += f"\n• {c}\nhttps://t.me/{BOT_USERNAME}?start={c}"
@@ -239,13 +231,23 @@ async def campaigns(call: CallbackQuery):
     ])
     await call.message.edit_text(text, reply_markup=kb)
 
+@dp.callback_query(F.data == "back_admin")
+async def back_admin(call: CallbackQuery):
+    if call.from_user.id not in ADMINS:
+        return
+    await call.message.edit_text("выбери:", reply_markup=admin_keyboard())
+
 @dp.callback_query(F.data == "new_campaign")
 async def new_campaign(call: CallbackQuery, state: FSMContext):
+    if call.from_user.id not in ADMINS:
+        return
     await call.message.edit_text("Введи название кампании (латиница, без пробелов):")
     await state.set_state(CampaignStates.waiting_for_name)
 
 @dp.message(CampaignStates.waiting_for_name)
 async def save_campaign(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMINS:
+        return
     name = message.text.strip()
     if name in db["campaigns"]:
         await message.answer("❌ Такая кампания уже есть")
@@ -264,7 +266,12 @@ async def start_broadcast(call: CallbackQuery, state: FSMContext):
 
 @dp.message(BroadcastStates.waiting_for_message)
 async def do_broadcast(message: Message, state: FSMContext):
+    if message.from_user.id not in ADMINS:
+        return
     await state.clear()
+    if message.content_type not in ("text", "photo") or (message.content_type == "text" and not message.text):
+        await message.answer("❌ Поддерживаются только текст или фото")
+        return
     sent = 0
     for uid in db["users"]:
         try:
@@ -287,4 +294,4 @@ async def main():
 if __name__ == "__main__":
     import logging
     logging.basicConfig(level=logging.INFO)
-    asyncio.get_event_loop().run_until_complete(main())
+    asyncio.run(main())
