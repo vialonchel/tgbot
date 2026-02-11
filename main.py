@@ -80,16 +80,60 @@ async def ensure_subscribed(call: CallbackQuery):
     return False
 
 # =========================
-# кнопка назад из админки
+# обработчики
 # =========================
 
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: CallbackQuery):
     await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
 
+@dp.callback_query(F.data.startswith("device_"))
+async def select_device(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+
+    device = call.data.replace("device_", "")  # ios / android / windows
+
+    await call.message.edit_text(
+        "Выбери тему:",
+        reply_markup=themes_keyboard(device)
+    )
+
+
 @dp.callback_query(F.data == "back_admin")
 async def back_admin(call: CallbackQuery):
     await call.message.edit_text("выбери:", reply_markup=admin_keyboard())
+
+@dp.callback_query(F.data == "themes")
+async def choose_device(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+
+    await call.message.edit_text(
+        "С какого девайса ты?",
+        reply_markup=device_keyboard()
+    )
+
+
+@dp.callback_query(F.data.startswith("install_"))
+async def install_theme(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    _, device, filename = call.data.split("_", 2)
+    path = f"themes/{device}/{filename}"
+
+    if not os.path.exists(path):
+        await call.answer("❌ Файл не найден", show_alert=True)
+        return
+
+    with open(path, "rb") as f:
+        await bot.send_document(
+            call.from_user.id,
+            document=f,
+            caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉"
+        )
+
+
 
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
@@ -132,6 +176,15 @@ def admin_keyboard():
         [InlineKeyboardButton(text="📣 Кампании", callback_data="campaigns")],
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_menu")]
     ])
+
+def device_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 iOS", callback_data="device_ios")],
+        [InlineKeyboardButton(text="🤖 Android", callback_data="device_android")],
+        [InlineKeyboardButton(text="💻 Windows", callback_data="device_windows")],
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu")]
+    ])
+
 
 # =========================
 # /start (кампании)
@@ -206,7 +259,7 @@ async def campaigns(call: CallbackQuery):
         text += f"\n• {c}\nhttps://t.me/{BOT_USERNAME}?start={c}"
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➕ Создать кампанию", callback_data="new_campaign")],
-        InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin")
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="back_admin")]
     ])
     await call.message.edit_text(text, reply_markup=kb)
 
