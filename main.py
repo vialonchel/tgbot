@@ -145,7 +145,7 @@ async def start(message: Message):
         if member.status in ("member", "administrator", "creator"):
             users[user_id]["subscribed"] = True
             save_users()
-            await message.answer("😋 выбери:", reply_markup=menu_keyboard())
+            await message.answer("выбери пункт:", reply_markup=menu_keyboard())
             return
     except:
         pass
@@ -167,7 +167,7 @@ async def check_sub(call: CallbackQuery):
         if member.status in ("member", "administrator", "creator"):
             users[user_id]["subscribed"] = True
             save_users()
-            await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+            await call.message.edit_text("выбери пункт:", reply_markup=menu_keyboard())
             return
     except:
         pass
