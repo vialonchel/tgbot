@@ -236,7 +236,71 @@ async def noop(call: CallbackQuery):
 @dp.callback_query(F.data == "add_bot")
 async def add_bot(call: CallbackQuery):
     await call.answer("Функционал добавления пока не реализован", show_alert=True)
+from datetime import timedelta, datetime, timezone
 
+# =========================
+# АДМИН
+# =========================
+@dp.message(Command("admin"))
+async def admin(message: Message):
+    if message.from_user.id not in ADMINS:
+        return
+
+    total_users = len(users)
+    total_subscribed = sum(1 for u in users.values() if u.get("subscribed"))
+    total_conv = round(total_subscribed / total_users * 100, 2) if total_users else 0
+
+    # Статистика по устройствам
+    devices = {}
+    for u in users.values():
+        d = u.get("device")
+        if d:
+            devices[d] = devices.get(d, 0) + 1
+
+    # Статистика по последним 7 дням
+    today = datetime.now(timezone.utc).date()
+    cutoff = today - timedelta(days=6)  # последние 7 дней
+    daily = {}
+    for u in users.values():
+        day = datetime.strptime(u["first_start"], "%Y-%m-%d").date()
+        if day < cutoff:
+            continue
+        key = day.isoformat()
+        if key not in daily:
+            daily[key] = {"started": 0, "subscribed": 0}
+        daily[key]["started"] += 1
+        if u.get("subscribed"):
+            daily[key]["subscribed"] += 1
+    # Конверсия по дням
+    for data in daily.values():
+        s = data["started"]
+        data["conversion"] = round(data["subscribed"] / s * 100, 2) if s else 0.0
+
+    # Формируем текст
+    text = (
+        f"📊 <b>Общая статистика</b>\n\n"
+        f"👤 Всего пользователей: {total_users}\n"
+        f"✅ Подписались: {total_subscribed}\n"
+        f"🎯 Конверсия: {total_conv}%\n\n"
+    )
+
+    if devices:
+        text += "<b>По устройствам:</b>\n"
+        for d, count in devices.items():
+            text += f"{d}: {count}\n"
+        text += "\n"
+
+    if daily:
+        text += "<b>Статистика по дням (последние 7 дней):</b>\n"
+        for day, data in sorted(daily.items()):
+            text += (
+                f"\n<b>{day}</b>\n"
+                f"Запуски: {data['started']}\n"
+                f"Подписки: {data['subscribed']}\n"
+                f"Конверсия: {data['conversion']}%\n"
+            )
+
+    await message.answer(text)
 
 # =========================
 # ЗАПУСК
