@@ -4,16 +4,11 @@ import os
 from datetime import datetime, timezone, timedelta
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import (
-    Message, CallbackQuery,
-    InlineKeyboardMarkup, InlineKeyboardButton
-)
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
 from aiogram.client.default import DefaultBotProperties
-
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-
 
 # =========================
 # НАСТРОЙКИ
@@ -79,7 +74,6 @@ async def ensure_subscribed(call: CallbackQuery) -> bool:
     except:
         pass
 
-    # Если не подписан, показываем экран подписки
     await call.message.edit_text(
         "❣️ Для доступа подпишись на канал:",
         reply_markup=subscribe_keyboard()
@@ -144,10 +138,10 @@ async def start(message: Message):
     user_id = ensure_user(message.from_user)
     user_name = message.from_user.first_name or "друг"
 
-    # Отправляем приветствие отдельным сообщением
+    # Приветствие отдельным сообщением
     await message.answer(f"Привет, {user_name}!")
 
-    # Проверяем подписку
+    # Проверка подписки
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
         if member.status in ("member", "administrator", "creator"):
@@ -158,7 +152,6 @@ async def start(message: Message):
     except:
         pass
 
-    # Если не подписан — показываем экран подписки
     await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
 
 # =========================
@@ -167,7 +160,6 @@ async def start(message: Message):
 @dp.callback_query(F.data == "check_sub")
 async def check_sub(call: CallbackQuery):
     user_id = ensure_user(call.from_user)
-
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
         if member.status in ("member", "administrator", "creator"):
@@ -245,11 +237,13 @@ async def noop(call: CallbackQuery):
 async def back_to_menu(call: CallbackQuery):
     await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
 
+# =========================
+# РАССЫЛКА
+# =========================
 @dp.callback_query(F.data == "start_broadcast")
 async def broadcast_button(call: CallbackQuery, state: FSMContext):
     if call.from_user.id not in ADMINS:
         return
-
     await call.message.edit_text("📤 Отправь сообщение для рассылки. Можно текст, эмодзи, ссылки, фото.")
     await state.set_state(BroadcastStates.waiting_for_message)
 
@@ -258,7 +252,7 @@ async def process_broadcast(message: Message, state: FSMContext):
     if message.from_user.id not in ADMINS:
         return
 
-    await state.clear()  # завершаем состояние
+    await state.clear()
 
     users_list = list(users.keys())
     sent_count = 0
@@ -269,12 +263,15 @@ async def process_broadcast(message: Message, state: FSMContext):
     for user_id in users_list:
         try:
             if photo:
-                await bot.send_photo(
-                    chat_id=int(user_id),
-                    photo=photo.file_id,
-                    caption=caption or message.text,
-                    parse_mode="HTML"
-                )
+                # Отправляем фото отдельно
+                await bot.send_photo(chat_id=int(user_id), photo=photo.file_id)
+                # Текст отдельно с HTML разметкой
+                if caption or message.text:
+                    await bot.send_message(
+                        chat_id=int(user_id),
+                        text=caption or message.text,
+                        parse_mode="HTML"
+                    )
             else:
                 await bot.send_message(
                     chat_id=int(user_id),
@@ -286,7 +283,6 @@ async def process_broadcast(message: Message, state: FSMContext):
             print(f"Не удалось отправить {user_id}: {e}")
 
     await message.answer(f"✅ Рассылка завершена. Отправлено пользователям: {sent_count}/{len(users_list)}")
-
 
 # =========================
 # АДМИН ПАНЕЛЬ
@@ -335,7 +331,6 @@ async def admin(message: Message):
     ])
 
     await message.answer(stats_text, reply_markup=admin_kb)
-
 
 # =========================
 # ЗАПУСК
