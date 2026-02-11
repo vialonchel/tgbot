@@ -111,20 +111,31 @@ def theme_keyboard(section, index, total):
 async def subscription_guard(call: CallbackQuery):
     user_id = ensure_user(call.from_user)
 
+    # кнопка проверки подписки — всегда пропускаем
     if call.data == "check_sub":
         return
 
+    # ✅ ЕСЛИ МЫ УЖЕ ЗНАЕМ, ЧТО ПОДПИСАН — НЕ МЕШАЕМ
+    if users[user_id].get("subscribed"):
+        return
+
+    # ❗ только если НЕ подписан — проверяем реально
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
-        if member.status not in ("member", "administrator", "creator"):
-            await call.message.edit_text(
-                "❣️ Для доступа к боту подпишись на канал:",
-                reply_markup=subscribe_keyboard()
-            )
-            raise Exception
+        if member.status in ("member", "administrator", "creator"):
+            users[user_id]["subscribed"] = True
+            save_users()
+            return
     except:
-        raise
+        pass
 
+    # ❌ всё ещё не подписан — показываем экран подписки
+    await call.message.edit_text(
+        "❣️ Для доступа к боту подпишись на канал:",
+        reply_markup=subscribe_keyboard()
+    )
+    raise Exception
+    
 # =========================
 # /start
 # =========================
@@ -147,16 +158,23 @@ async def start(message: Message):
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
 # =========================
+
 @dp.callback_query(F.data == "check_sub")
 async def check_sub(call: CallbackQuery):
     user_id = ensure_user(call.from_user)
+
     member = await bot.get_chat_member(CHANNEL_USERNAME, call.from_user.id)
     if member.status in ("member", "administrator", "creator"):
         users[user_id]["subscribed"] = True
         save_users()
-        await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+
+        # ✅ сразу возвращаем в меню
+        await call.message.edit_text(
+            "😋 выбери:",
+            reply_markup=menu_keyboard()
+        )
     else:
-        await call.answer("Не подписан", show_alert=True)
+        await call.answer("Ты ещё не подписался 😢", show_alert=True)
 
 # =========================
 # ТЕМЫ → УСТРОЙСТВО
