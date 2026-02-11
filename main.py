@@ -100,7 +100,8 @@ def theme_keyboard(section, index, total):
             InlineKeyboardButton(text=f"{index+1}/{total}", callback_data="noop"),
             InlineKeyboardButton(text="➡️", callback_data=f"nav_{section}_{index+1}")
         ],
-        [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot")]
+        [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_bot")],
+        [InlineKeyboardButton(text="🔙 В меню", callback_data="back_menu")]
     ])
 
 # =========================
