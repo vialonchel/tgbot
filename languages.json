@@ -1,0 +1,35 @@
+{
+  "categories": [
+    {
+      "name": "Европейские",
+      "slug": "european",
+      "languages": [
+        {"name": "English", "link": "t.me/setlanguage/en"},
+        {"name": "Русский", "link": "t.me/setlanguage/ru"},
+        {"name": "Deutsch", "link": "t.me/setlanguage/de"},
+        {"name": "Français", "link": "t.me/setlanguage/fr"},
+        {"name": "Español", "link": "t.me/setlanguage/es"}
+      ]
+    },
+    {
+      "name": "Азиатские",
+      "slug": "asian",
+      "languages": [
+        {"name": "中文 (简体)", "link": "t.me/setlanguage/zh-hans"},
+        {"name": "日本語", "link": "t.me/setlanguage/ja"},
+        {"name": "한국어", "link": "t.me/setlanguage/ko"},
+        {"name": "Bahasa Indonesia", "link": "t.me/setlanguage/id"}
+      ]
+    },
+    {
+      "name": "Другие",
+      "slug": "other",
+      "languages": [
+        {"name": "Українська", "link": "t.me/setlanguage/uk"},
+        {"name": "Türkçe", "link": "t.me/setlanguage/tr"},
+        {"name": "Português", "link": "t.me/setlanguage/pt-br"},
+        {"name": "العربية", "link": "t.me/setlanguage/ar"}
+      ]
+    }
+  ]
+}
