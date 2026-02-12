@@ -28,7 +28,7 @@ SLUG_TO_CATEGORY = {slug: name for row in CATEGORIES for name, slug in row}
 # Настройки
 # =========================1
 BOT_TOKEN = "8554128234:AAHI-fEZi-B2C58O8ZKvg2oipDNcYcXYUvY"
-CHANNEL_USERNAME = "@wursix"
+CHANNEL_USERNAME = "@LoveToYou3"
 USERS_FILE = "users.json"
 ADMINS = {913949366}
 BOT_USERNAME = "TT_temki_bot"
