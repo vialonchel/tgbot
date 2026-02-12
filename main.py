@@ -9,10 +9,24 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # =========================
-# НАСТРОЙКИ
+# Категории
 # =========================
+
+CATEGORIES = [
+    [("Аниме", "anime"), ("Дед инсайд", "ded_insayd"), ("Котики", "kotiki")],
+    [("Милые", "milye"), ("Зимние", "zimnie"), ("Пошлые", "poshlye")],
+    [("Кино", "kino"), ("Сердечки", "serdechki"), ("K-Pop", "k_pop")],
+    [("Автомобили", "avtomobili"), ("Парные", "parnye")]
+]
+
+SLUG_TO_CATEGORY = {slug: name for row in CATEGORIES for name, slug in row}
+
+# =========================
+# Настройки
+# =========================1
 BOT_TOKEN = "8554128234:AAHI-fEZi-B2C58O8ZKvg2oipDNcYcXYUvY"
 CHANNEL_USERNAME = "@wursix"
 USERS_FILE = "users.json"
@@ -40,7 +54,13 @@ def load_users():
     if not os.path.exists(USERS_FILE):
         return {"users": {}, "campaigns": ["organic"]}
     with open(USERS_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+        data = json.load(f)
+    # Ensure required keys exist
+    if "users" not in data:
+        data["users"] = {}
+    if "campaigns" not in data:
+        data["campaigns"] = ["organic"]
+    return data
 
 def save_users():
     with open(USERS_FILE, "w", encoding="utf-8") as f:
@@ -103,26 +123,35 @@ def admin_keyboard():
 
 def device_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 iOS", callback_data="device_ios")],
-        [InlineKeyboardButton(text="🤖 Android", callback_data="device_android")],
-        [InlineKeyboardButton(text="💻 Windows", callback_data="device_windows")],
+        [
+            InlineKeyboardButton(text="📱 iOS", callback_data="device_ios"),
+            InlineKeyboardButton(text="🤖 Android", callback_data="device_android"),
+            InlineKeyboardButton(text="💻 Windows", callback_data="device_windows")
+        ],
         [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu")]
     ])
 
-def themes_keyboard(device: str) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardMarkup(row_width=1)
-    folder = f"themes/{device}/"
+def categories_keyboard(device: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    for row in CATEGORIES:
+        row_buttons = [InlineKeyboardButton(text=name, callback_data=f"category_{device}_{slug}") for name, slug in row]
+        kb.row(*row_buttons)
+    kb.add(InlineKeyboardButton(text="⬅️ Главное меню", callback_data=f"back_to_devices_{device}"))
+    return kb.as_markup()
+
+def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    folder = f"themes/{device}/{category}/"
     if not os.path.exists(folder):
-        return InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data="back_menu")]]
-        )
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
+    
     for file in os.listdir(folder):
         if file.startswith("."):
             continue
         filename_no_ext = os.path.splitext(file)[0]
-        kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{filename_no_ext}"))
-    kb.add(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
-    return kb
+        kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{category}_{filename_no_ext}"))
+    kb.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"back_to_categories_{device}"))
+    return kb.as_markup()
 
 # =========================
 # ОБРАБОТЧИКИ
@@ -143,9 +172,10 @@ async def start(message: Message):
     if is_subscribed:
         db["users"][str(message.from_user.id)]["subscribed"] = True
         save_users()
-        await message.answer("😋 выбери:", reply_markup=menu_keyboard())
+        await message.answer("😋 Выбери нужное:", reply_markup=menu_keyboard())
     else:
         await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
+    await message.delete()
 
 @dp.message(Command("admin"))
 async def admin(message: Message):
@@ -158,14 +188,39 @@ async def admin(message: Message):
 # =========================
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: CallbackQuery):
-    await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+    await call.message.edit_text("😋 Выбери нужное:", reply_markup=menu_keyboard())
 
 @dp.callback_query(F.data.startswith("device_"))
 async def select_device(call: CallbackQuery):
     if not await ensure_subscribed(call):
         return
     device = call.data.replace("device_", "")
-    await call.message.edit_text("Выбери тему:", reply_markup=themes_keyboard(device))
+    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
+
+@dp.callback_query(F.data.startswith("category_"))
+async def select_category(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    _, device, slug = call.data.split("_", 2)
+    category = SLUG_TO_CATEGORY.get(slug)
+    if not category:
+        await call.answer("❌ Категория не найдена")
+        return
+    await call.message.edit_text(f"🎨 {category}:", reply_markup=themes_keyboard_for_category(device, category))
+
+@dp.callback_query(F.data.startswith("back_to_devices_"))
+async def back_to_devices(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    device = call.data.replace("back_to_devices_", "")
+    await call.message.edit_text("С какого девайса ты?", reply_markup=device_keyboard())
+
+@dp.callback_query(F.data.startswith("back_to_categories_"))
+async def back_to_categories(call: CallbackQuery):
+    if not await ensure_subscribed(call):
+        return
+    device = call.data.replace("back_to_categories_", "")
+    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
 
 @dp.callback_query(F.data == "themes")
 async def choose_device(call: CallbackQuery):
@@ -177,7 +232,11 @@ async def choose_device(call: CallbackQuery):
 async def install_theme(call: CallbackQuery):
     if not await ensure_subscribed(call):
         return
-    _, device, filename = call.data.split("_", 2)
+
+    _, device, category, filename = call.data.split("_", 3)
+    theme_file = f"themes/{device}/{category}/{filename}{extensions.get(device, '')}"
+    preview_file = f"themes/{device}/{category}/{filename}_preview.jpg"
+
     extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
     theme_file = f"themes/{device}/{filename}{extensions.get(device, '')}"
     preview_file = f"themes/{device}/{filename}_preview.jpg"
@@ -197,7 +256,7 @@ async def check_subscription(call: CallbackQuery):
         if member.status in ("member", "administrator", "creator"):
             db["users"][uid]["subscribed"] = True
             save_users()
-            await call.message.edit_text("😋 выбери:", reply_markup=menu_keyboard())
+            await call.message.edit_text("😋 Выбери нужное:", reply_markup=menu_keyboard())
             return
     except:
         pass
@@ -269,22 +328,21 @@ async def do_broadcast(message: Message, state: FSMContext):
     if message.from_user.id not in ADMINS:
         return
     await state.clear()
-    if message.content_type not in ("text", "photo") or (message.content_type == "text" and not message.text):
-        await message.answer("❌ Поддерживаются только текст или фото")
-        return
     sent = 0
+    total = len(db["users"])
     for uid in db["users"]:
         try:
-            if message.content_type == "photo":
-                await bot.send_photo(int(uid), message.photo[-1].file_id,
-                                     caption=message.caption or "", parse_mode="HTML")
-            else:
-                await bot.send_message(int(uid), message.text, parse_mode="HTML")
+            await bot.copy_message(
+                chat_id=int(uid),
+                from_chat_id=message.chat.id,
+                message_id=message.message_id,
+                parse_mode="HTML"
+            )
             sent += 1
         except:
             continue
-    await message.answer(f"✅ Рассылка завершена ({sent})")
-
+    await message.answer(f"✅ Рассылка завершена ({sent}/{total})")
+    await message.answer("выбери:", reply_markup=admin_keyboard())
 # =========================
 # ЗАПУСК
 # =========================
