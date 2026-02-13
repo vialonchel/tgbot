@@ -187,7 +187,6 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     for i in range(0, len(page_cats), 3):
         row = [InlineKeyboardButton(text=name, callback_data=f"category_{device}_{slug}") for name, slug in page_cats[i:i+3]]
         kb.row(*row)
-    kb.row(InlineKeyboardButton(text="рандомная тема", callback_data=f"random_theme_{device}"))
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"cat_page_{device}_{page-1}"))
