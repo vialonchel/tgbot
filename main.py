@@ -31,7 +31,9 @@ THEMES_PER_PAGE = 9  # 3 ряда по 3
 # =========================
 # Настройки
 # =========================
-BOT_TOKEN = "8554128234:AAHI-fEZi-B2C58O8ZKvg2oipDNcYcXYUvY"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError("Environment variable BOT_TOKEN is required")
 CHANNEL_USERNAME = "@wursix"
 USERS_FILE = "users.json"
 ADMINS = {913949366}
@@ -106,12 +108,32 @@ async def ensure_subscribed(user_id: int):
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, user_id)
         if member.status in ("member", "administrator", "creator"):
+            if uid not in db["users"]:
+                db["users"][uid] = {
+                    "first_start": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    "subscribed": False,
+                    "device": None,
+                    "campaign": "organic"
+                }
             db["users"][uid]["subscribed"] = True
             save_users()
             return True
     except Exception:
         pass
     return False
+
+def theme_extension(device: str) -> str:
+    return {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}.get(device, "")
+
+def resolve_device_folder(device: str) -> str:
+    folder = os.path.join("themes", device)
+    if os.path.isdir(folder):
+        return folder
+    if device == "android":
+        fallback = os.path.join("themes", "andriod")
+        if os.path.isdir(fallback):
+            return fallback
+    return folder
 # =========================
 # КЛАВИАТУРЫ
 # =========================
@@ -167,11 +189,12 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    folder = f"themes/{device}/{category}/"
+    folder = os.path.join(resolve_device_folder(device), category)
     if not os.path.exists(folder):
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
+    ext = theme_extension(device)
     for file in os.listdir(folder):
-        if file.startswith("."):
+        if file.startswith(".") or file.endswith("_preview.jpg") or not file.endswith(ext):
             continue
         filename_no_ext = os.path.splitext(file)[0]
         kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{category}_{filename_no_ext}"))
@@ -284,21 +307,21 @@ async def process_random_theme_device(call: CallbackQuery, state: FSMContext):
     category_row = random.choice(CATEGORIES)
     _, category_slug = random.choice(category_row)
     category = SLUG_TO_CATEGORY[category_slug]
-    folder = f"themes/{device}/{category}/"
+    folder = os.path.join(resolve_device_folder(device), category)
     if not os.path.exists(folder):
         await call.message.edit_text("❌ Темы не найдены")
         await state.clear()
         return
-    themes = [f for f in os.listdir(folder) if not f.startswith(".") and not f.endswith("_preview.jpg")]
+    ext = theme_extension(device)
+    themes = [f for f in os.listdir(folder) if not f.startswith(".") and f.endswith(ext)]
     if not themes:
         await call.message.edit_text("❌ Темы не найдены")
         await state.clear()
         return
     theme_file = random.choice(themes)
     filename_no_ext = os.path.splitext(theme_file)[0]
-    preview_file = f"{folder}{filename_no_ext}_preview.jpg"
-    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
-    theme_path = f"{folder}{filename_no_ext}{extensions.get(device, '')}"
+    preview_file = os.path.join(folder, f"{filename_no_ext}_preview.jpg")
+    theme_path = os.path.join(folder, f"{filename_no_ext}{ext}")
     if os.path.exists(preview_file):
         await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
     if os.path.exists(theme_path):
@@ -375,8 +398,7 @@ async def process_bg_device(call: CallbackQuery, state: FSMContext):
         img.save(png_path, "PNG")
     with open(png_path, "rb") as f:
         bg_base64 = base64.b64encode(f.read()).decode("utf-8")
-    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tdesktop-theme"}
-    theme_file = f"custom_bg{extensions.get(device, '.attheme')}"
+    theme_file = f"custom_bg{theme_extension(device) or '.attheme'}"
     if device == "windows":
         # Для desktop - zip с background.jpg и palette.tdesktop-palette (пустой)
         palette_content = ""  # Пустая палитра
@@ -427,16 +449,20 @@ async def select_device(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     device = call.data.replace("device_", "")
-    await call.message.edit_text("Выбери категорию:", reply_markup=themes_categories_keyboard(device))
+    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
 
-@dp.callback_query(F.data.startswith("themes_cat_page_"))
+@dp.callback_query(F.data.startswith("cat_page_"))
 async def paginate_themes_categories(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
-    parts = call.data.split("_")
-    device = parts[3]
-    page = int(parts[4])
-    await call.message.edit_text("Выбери категорию:", reply_markup=themes_categories_keyboard(device, page))
+    try:
+        payload = call.data.replace("cat_page_", "", 1)
+        device, page_str = payload.rsplit("_", 1)
+        page = int(page_str)
+    except (ValueError, IndexError):
+        await call.answer("❌ Ошибка пагинации", show_alert=True)
+        return
+    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device, page))
 
 @dp.callback_query(F.data.startswith("category_"))
 async def select_category(call: CallbackQuery):
@@ -461,7 +487,7 @@ async def back_to_categories(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     device = call.data.replace("back_to_categories_", "")
-    await call.message.edit_text("Выбери категорию:", reply_markup=themes_categories_keyboard(device))
+    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
 
 @dp.callback_query(F.data == "themes")
 async def choose_device(call: CallbackQuery):
@@ -475,19 +501,19 @@ async def random_theme_callback(call: CallbackQuery, state: FSMContext):
     category_row = random.choice(CATEGORIES)
     _, category_slug = random.choice(category_row)
     category = SLUG_TO_CATEGORY[category_slug]
-    folder = f"themes/{device}/{category}/"
+    folder = os.path.join(resolve_device_folder(device), category)
     if not os.path.exists(folder):
         await call.answer("❌ Темы не найдены")
         return
-    themes = [f for f in os.listdir(folder) if not f.startswith(".") and not f.endswith("_preview.jpg")]
+    ext = theme_extension(device)
+    themes = [f for f in os.listdir(folder) if not f.startswith(".") and f.endswith(ext)]
     if not themes:
         await call.answer("❌ Темы не найдены")
         return
     theme_file = random.choice(themes)
     filename_no_ext = os.path.splitext(theme_file)[0]
-    preview_file = f"{folder}{filename_no_ext}_preview.jpg"
-    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
-    theme_path = f"{folder}{filename_no_ext}{extensions.get(device, '')}"
+    preview_file = os.path.join(folder, f"{filename_no_ext}_preview.jpg")
+    theme_path = os.path.join(folder, f"{filename_no_ext}{ext}")
     if os.path.exists(preview_file):
         await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
     if os.path.exists(theme_path):
@@ -502,9 +528,10 @@ async def install_theme(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     _, device, category, filename = call.data.split("_", 3)
-    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
-    theme_file = f"themes/{device}/{category}/{filename}{extensions.get(device, '')}"
-    preview_file = f"themes/{device}/{category}/{filename}_preview.jpg"
+    ext = theme_extension(device)
+    base_dir = os.path.join(resolve_device_folder(device), category)
+    theme_file = os.path.join(base_dir, f"{filename}{ext}")
+    preview_file = os.path.join(base_dir, f"{filename}_preview.jpg")
     if os.path.exists(preview_file):
         await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр темы")
     if os.path.exists(theme_file):
@@ -640,7 +667,7 @@ async def select_language_category(call: CallbackQuery):
 async def paginate_languages(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
-        parts = call.data.split("_")
+    parts = call.data.split("_")
     slug = parts[2]
     page = int(parts[3])
     category_name = SLUG_TO_LANG_CATEGORY.get(slug)
@@ -671,12 +698,6 @@ async def random_language_callback(call: CallbackQuery):
     ])
     await bot.send_message(call.from_user.id, f"Случайный язык: {lang['name']}\n{description}", reply_markup=kb)
     await call.answer()
-
-@dp.callback_query(F.data.startswith("device_"), RandomThemeStates.waiting_for_device)
-async def process_random_theme_device(call: CallbackQuery, state: FSMContext):
-    device = call.data.replace("device_", "")
-    # ... (остальной код как был)
-    await state.clear()
 
 # =========================
 # ЗАПУСК
