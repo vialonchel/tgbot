@@ -4,28 +4,28 @@
       "name": "Милые 💞",
       "slug": "cute",
       "languages": [
-        { "name": "", "link": "" }
+        { "name": "Язык1", "link": "t.me/setlanguage/code1", "description": "Описание милого языка1" }
       ]
     },
     {
       "name": "С матом 🔞",
       "slug": "explicit",
       "languages": [
-        { "name": "", "link": "" }
+        { "name": "Язык2", "link": "t.me/setlanguage/code2", "description": "Описание языка с матом" }
       ]
     },
     {
       "name": "Аниме",
       "slug": "anime",
       "languages": [
-        { "name": "", "link": "" }
+        { "name": "Язык3", "link": "t.me/setlanguage/code3", "description": "Описание аниме языка" }
       ]
     },
     {
       "name": "Фильмы",
       "slug": "films",
       "languages": [
-        { "name": "", "link": "" }
+        { "name": "Язык4", "link": "t.me/setlanguage/code4", "description": "Описание языка фильмов" }
       ]
     }
   ]
