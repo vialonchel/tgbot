@@ -134,6 +134,15 @@ def resolve_device_folder(device: str) -> str:
         if os.path.isdir(fallback):
             return fallback
     return folder
+
+def find_theme_preview(folder: str, theme_name: str) -> str | None:
+    same_name_jpg = os.path.join(folder, f"{theme_name}.jpg")
+    legacy_preview = os.path.join(folder, f"{theme_name}_preview.jpg")
+    if os.path.exists(same_name_jpg):
+        return same_name_jpg
+    if os.path.exists(legacy_preview):
+        return legacy_preview
+    return None
 # =========================
 # КЛАВИАТУРЫ
 # =========================
@@ -320,9 +329,9 @@ async def process_random_theme_device(call: CallbackQuery, state: FSMContext):
         return
     theme_file = random.choice(themes)
     filename_no_ext = os.path.splitext(theme_file)[0]
-    preview_file = os.path.join(folder, f"{filename_no_ext}_preview.jpg")
+    preview_file = find_theme_preview(folder, filename_no_ext)
     theme_path = os.path.join(folder, f"{filename_no_ext}{ext}")
-    if os.path.exists(preview_file):
+    if preview_file:
         await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
     if os.path.exists(theme_path):
         await bot.send_document(call.from_user.id, document=FSInputFile(theme_path),
@@ -512,9 +521,9 @@ async def random_theme_callback(call: CallbackQuery, state: FSMContext):
         return
     theme_file = random.choice(themes)
     filename_no_ext = os.path.splitext(theme_file)[0]
-    preview_file = os.path.join(folder, f"{filename_no_ext}_preview.jpg")
+    preview_file = find_theme_preview(folder, filename_no_ext)
     theme_path = os.path.join(folder, f"{filename_no_ext}{ext}")
-    if os.path.exists(preview_file):
+    if preview_file:
         await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
     if os.path.exists(theme_path):
         await bot.send_document(call.from_user.id, document=FSInputFile(theme_path),
@@ -531,8 +540,8 @@ async def install_theme(call: CallbackQuery):
     ext = theme_extension(device)
     base_dir = os.path.join(resolve_device_folder(device), category)
     theme_file = os.path.join(base_dir, f"{filename}{ext}")
-    preview_file = os.path.join(base_dir, f"{filename}_preview.jpg")
-    if os.path.exists(preview_file):
+    preview_file = find_theme_preview(base_dir, filename)
+    if preview_file:
         await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр темы")
     if os.path.exists(theme_file):
         await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
