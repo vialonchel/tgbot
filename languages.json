@@ -4,28 +4,28 @@
       "name": "Милые 💞",
       "slug": "cute",
       "languages": [
-        {"name": "", "link": ""},
+        { "name": "", "link": "" }
       ]
     },
     {
       "name": "С матом 🔞",
-      "slug": "horny",
+      "slug": "explicit",
       "languages": [
-        {"name": "", "link": ""},
+        { "name": "", "link": "" }
       ]
     },
     {
       "name": "Аниме",
       "slug": "anime",
       "languages": [
-        {"name": "", "link": ""},
+        { "name": "", "link": "" }
       ]
     },
     {
       "name": "Фильмы",
       "slug": "films",
       "languages": [
-        {"name": "", "link": ""},
+        { "name": "", "link": "" }
       ]
     }
   ]
