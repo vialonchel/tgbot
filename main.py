@@ -176,7 +176,7 @@ def device_keyboard(prefix: str = "device_"):
             InlineKeyboardButton(text="🤖 Android", callback_data=f"{prefix}android"),
             InlineKeyboardButton(text="💻 Windows", callback_data=f"{prefix}windows")
         ],
-        [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu")]
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
     ])
 def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
@@ -195,7 +195,7 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     if end < total:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"cat_page_{device}_{page+1}"))
     kb.row(*nav)
-    kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
     return kb.as_markup()
 def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMarkup:
@@ -231,7 +231,7 @@ def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_cat_page_{page+1}"))
     kb.row(*nav)
     kb.row(InlineKeyboardButton(text="рандомный язык", callback_data="random_language"))
-    kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
     return kb.as_markup()
 def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKeyboardMarkup:
@@ -254,7 +254,7 @@ def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKe
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_page_{category_slug}_{page+1}"))
     kb.row(*nav)
     kb.row(InlineKeyboardButton(text="⬅️ К категориям", callback_data="languages"))
-    kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
     return kb.as_markup()
 def bot_link_keyboard():
