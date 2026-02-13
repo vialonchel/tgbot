@@ -176,7 +176,7 @@ def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMa
         filename_no_ext = os.path.splitext(file)[0]
         kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{category}_{filename_no_ext}"))
     kb.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"back_to_categories_{device}"))
-    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
+    kb.row(InlineKeyboardButton(text="Добавить ботав группу", callback_data="add_to_group"))
     return kb.as_markup()
 def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
@@ -237,13 +237,8 @@ async def start(message: Message):
     args = message.text.split(maxsplit=1)
     if message.chat.type in ("group", "supergroup"):
         if len(args) > 1 and args[1] == "temki":
-            await message.answer_photo(
-                photo=FSInputFile(GROUP_START_IMAGE),
-                caption="Отправь в чат картинку с подписью \"/bg\" и я сделаю из нее фон для твоего Telegram или переходи в бот, там много интересного😉.",
-                reply_markup=bot_link_keyboard()
-            )
             await message.answer(
-                "У меня есть команды которые ты можешь использовать здесь 😋 Мои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
+                "У меня есть команды которые ты можешь использовать в групповом чате 😋 \n\nМои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
                 reply_markup=bot_link_keyboard()
             )
         return
@@ -338,9 +333,6 @@ async def random_language(message: Message):
 
 @dp.message(F.photo & F.caption.startswith("/bg"))
 async def set_bg(message: Message, state: FSMContext):
-    if message.chat.type not in ("group", "supergroup"):
-        await message.answer("Эта команда работает только в группах.")
-        return
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     temp_photo = "temp_bg.jpg"
@@ -367,6 +359,7 @@ async def receive_photo(message: Message, state: FSMContext):
     await state.update_data(photo_path=temp_photo)
     await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
     await state.set_state(CustomThemeStates.waiting_for_device)
+
 @dp.callback_query(F.data.startswith("bg_"), CustomThemeStates.waiting_for_device)
 async def process_bg_device(call: CallbackQuery, state: FSMContext):
     device = call.data.replace("bg_", "")
@@ -640,18 +633,20 @@ async def select_language_category(call: CallbackQuery):
         return
     page = 0
     current_lang = next((cat for cat in languages_db["categories"] if cat["slug"] == slug), None)["languages"][page]
-    await call.message.edit_text(f"🎨 {category_name}: {current_lang['name']}", reply_markup=languages_pagination_keyboard(slug, page))
+    description = current_lang.get('description', '')
+    await call.message.edit_text(f"🎨 {category_name}: {current_lang['name']}\n{description}", reply_markup=languages_pagination_keyboard(slug, page))
 
 @dp.callback_query(F.data.startswith("lang_page_"))
 async def paginate_languages(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
-    parts = call.data.split("_")
+        parts = call.data.split("_")
     slug = parts[2]
     page = int(parts[3])
     category_name = SLUG_TO_LANG_CATEGORY.get(slug)
     current_lang = next((cat for cat in languages_db["categories"] if cat["slug"] == slug), None)["languages"][page]
-    await call.message.edit_text(f"🎨 {category_name}: {current_lang['name']}", reply_markup=languages_pagination_keyboard(slug, page))
+    description = current_lang.get('description', '')
+    await call.message.edit_text(f"🎨 {category_name}: {current_lang['name']}\n{description}", reply_markup=languages_pagination_keyboard(slug, page))
 
 @dp.callback_query(F.data == "noop")
 async def noop(call: CallbackQuery):
@@ -668,11 +663,13 @@ async def random_language_callback(call: CallbackQuery):
     if not langs:
         await call.answer("❌ Нет языков в категории")
         return
+    
     lang = random.choice(langs)
+    description = lang.get('description', '')
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Установить", url=lang["link"])]
     ])
-    await bot.send_message(call.from_user.id, f"Случайный язык: {lang['name']}", reply_markup=kb)
+    await bot.send_message(call.from_user.id, f"Случайный язык: {lang['name']}\n{description}", reply_markup=kb)
     await call.answer()
 
 @dp.callback_query(F.data.startswith("device_"), RandomThemeStates.waiting_for_device)
