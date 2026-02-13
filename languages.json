@@ -1,34 +1,31 @@
 {
   "categories": [
     {
-      "name": "Европейские",
-      "slug": "european",
+      "name": "Милые 💞",
+      "slug": "cute",
       "languages": [
-        {"name": "English", "link": "t.me/setlanguage/en"},
-        {"name": "Русский", "link": "t.me/setlanguage/ru"},
-        {"name": "Deutsch", "link": "t.me/setlanguage/de"},
-        {"name": "Français", "link": "t.me/setlanguage/fr"},
-        {"name": "Español", "link": "t.me/setlanguage/es"}
+        {"name": "", "link": ""},
       ]
     },
     {
-      "name": "Азиатские",
-      "slug": "asian",
+      "name": "С матом 🔞",
+      "slug": "horny",
       "languages": [
-        {"name": "中文 (简体)", "link": "t.me/setlanguage/zh-hans"},
-        {"name": "日本語", "link": "t.me/setlanguage/ja"},
-        {"name": "한국어", "link": "t.me/setlanguage/ko"},
-        {"name": "Bahasa Indonesia", "link": "t.me/setlanguage/id"}
+        {"name": "", "link": ""},
       ]
     },
     {
-      "name": "Другие",
-      "slug": "other",
+      "name": "Аниме",
+      "slug": "anime",
       "languages": [
-        {"name": "Українська", "link": "t.me/setlanguage/uk"},
-        {"name": "Türkçe", "link": "t.me/setlanguage/tr"},
-        {"name": "Português", "link": "t.me/setlanguage/pt-br"},
-        {"name": "العربية", "link": "t.me/setlanguage/ar"}
+        {"name": "", "link": ""},
+      ]
+    },
+    {
+      "name": "Фильмы",
+      "slug": "films",
+      "languages": [
+        {"name": "", "link": ""},
       ]
     }
   ]
