@@ -2,11 +2,12 @@ import asyncio
 import random
 import json
 import os
+import base64
+import zipfile
 from PIL import Image
 from datetime import datetime, timezone
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-from aiogram.types import ChatMemberUpdated
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
@@ -15,7 +16,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # =========================
-# Категории
+# Категории тем (flatten для пагинации)
 # =========================
 CATEGORIES = [
     [("Аниме", "anime"), ("Дед инсайд", "ded_insayd"), ("Котики", "kotiki")],
@@ -24,6 +25,9 @@ CATEGORIES = [
     [("Автомобили", "avtomobili"), ("Парные", "parnye")]
 ]
 SLUG_TO_CATEGORY = {slug: name for row in CATEGORIES for name, slug in row}
+ALL_THEME_CATEGORIES = [item for sublist in CATEGORIES for item in sublist]  # Плоский список для пагинации
+THEMES_PER_PAGE = 9  # 3 ряда по 3
+
 # =========================
 # Настройки
 # =========================
@@ -47,8 +51,9 @@ class CampaignStates(StatesGroup):
     waiting_for_name = State()
 class RandomThemeStates(StatesGroup):
     waiting_for_device = State()
-class RandomLanguageStates(StatesGroup):
-    waiting_for_choice = State()
+class CustomThemeStates(StatesGroup):
+    waiting_for_photo = State()
+    waiting_for_device = State()
 # =========================
 # ХРАНИЛИЩЕ
 # =========================
@@ -89,6 +94,8 @@ def load_languages():
 
 languages_db = load_languages()
 SLUG_TO_LANG_CATEGORY = {cat["slug"]: cat["name"] for cat in languages_db["categories"]}
+ALL_LANG_CATEGORIES = languages_db["categories"]  # Для пагинации языковых категорий
+LANG_PER_PAGE = 9
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
 # =========================
@@ -113,16 +120,15 @@ def subscribe_keyboard():
         [InlineKeyboardButton(text="✉️ Подписаться", url=f"https://t.me/{CHANNEL_USERNAME[1:]}")],
         [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_sub")]
     ])
-
 def menu_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="темки", callback_data="themes"),
             InlineKeyboardButton(text="язычки", callback_data="languages")
         ],
-        [InlineKeyboardButton(text="Добавить в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages")]
+        [InlineKeyboardButton(text="сделать тему из фото", callback_data="make_theme_photo")],
+        [InlineKeyboardButton(text="Добавить в группу", callback_data="add_to_group")]
     ])
-
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")],
@@ -130,89 +136,98 @@ def admin_keyboard():
         [InlineKeyboardButton(text="📣 Кампании", callback_data="campaigns")],
         [InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_menu")]
     ])
-
-def device_keyboard():
+def device_keyboard(prefix: str = "device_"):
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📱 iOS", callback_data="device_ios"),
-            InlineKeyboardButton(text="🤖 Android", callback_data="device_android"),
-            InlineKeyboardButton(text="💻 Windows", callback_data="device_windows")
+            InlineKeyboardButton(text="📱 iOS", callback_data=f"{prefix}ios"),
+            InlineKeyboardButton(text="🤖 Android", callback_data=f"{prefix}android"),
+            InlineKeyboardButton(text="💻 Windows", callback_data=f"{prefix}windows")
         ],
         [InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu")]
     ])
-
-def categories_keyboard(device: str) -> InlineKeyboardMarkup:
+def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    for row in CATEGORIES:
-        row_buttons = [InlineKeyboardButton(text=name, callback_data=f"category_{device}_{slug}") for name, slug in row]
-        kb.row(*row_buttons)
-    kb.add(InlineKeyboardButton(text="⬅️ Главное меню", callback_data=f"back_to_devices_{device}"))
-    kb.add(InlineKeyboardButton(text="Добавить в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages"))
+    total = len(ALL_THEME_CATEGORIES)
+    start = page * THEMES_PER_PAGE
+    end = min(start + THEMES_PER_PAGE, total)
+    page_cats = ALL_THEME_CATEGORIES[start:end]
+    for i in range(0, len(page_cats), 3):
+        row = [InlineKeyboardButton(text=name, callback_data=f"category_{device}_{slug}") for name, slug in page_cats[i:i+3]]
+        kb.row(*row)
+    kb.row(InlineKeyboardButton(text="рандомная тема", callback_data=f"random_theme_{device}"))
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"cat_page_{device}_{page-1}"))
+    nav.append(InlineKeyboardButton(text=f"{page+1}/{(total // THEMES_PER_PAGE) + 1}", callback_data="noop"))
+    if end < total:
+        nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"cat_page_{device}_{page+1}"))
+    kb.row(*nav)
+    kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    kb.row(InlineKeyboardButton(text="Добавить в группу", callback_data="add_to_group"))
     return kb.as_markup()
-
 def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     folder = f"themes/{device}/{category}/"
     if not os.path.exists(folder):
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
-   
     for file in os.listdir(folder):
         if file.startswith("."):
             continue
         filename_no_ext = os.path.splitext(file)[0]
         kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{category}_{filename_no_ext}"))
     kb.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"back_to_categories_{device}"))
-    kb.add(InlineKeyboardButton(text="Добавить в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages"))
+    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
     return kb.as_markup()
-
-def languages_categories_keyboard() -> InlineKeyboardMarkup:
+def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    categories = languages_db["categories"]
-    if not categories:
-        kb.add(InlineKeyboardButton(text="❌ Нет категорий языков", callback_data="noop"))
-    else:
-        for i in range(0, len(categories), 3):
-            row = []
-            for cat in categories[i:i+3]:
-                row.append(InlineKeyboardButton(text=cat["name"], callback_data=f"lang_category_{cat['slug']}"))
-            kb.row(*row)
-    kb.add(InlineKeyboardButton(text="⬅️ Главное меню", callback_data="back_menu"))
-    kb.add(InlineKeyboardButton(text="Добавить в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages"))
+    total = len(ALL_LANG_CATEGORIES)
+    start = page * LANG_PER_PAGE
+    end = min(start + LANG_PER_PAGE, total)
+    page_cats = ALL_LANG_CATEGORIES[start:end]
+    for i in range(0, len(page_cats), 3):
+        row = [InlineKeyboardButton(text=cat["name"], callback_data=f"lang_category_{cat['slug']}") for cat in page_cats[i:i+3]]
+        kb.row(*row)
+    
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"lang_cat_page_{page-1}"))
+    nav.append(InlineKeyboardButton(text=f"{page+1}/{(total // LANG_PER_PAGE) + 1}", callback_data="noop"))
+    if end < total:
+        nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_cat_page_{page+1}"))
+    kb.row(*nav)
+    kb.row(InlineKeyboardButton(text="рандомный язык", callback_data="random_language"))
+    kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
+    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
     return kb.as_markup()
-
 def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKeyboardMarkup:
-    categories = languages_db["categories"]
-    category = next((cat for cat in categories if cat["slug"] == category_slug), None)
+    category = next((cat for cat in languages_db["categories"] if cat["slug"] == category_slug), None)
     if not category:
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Категория не найдена", callback_data="languages")]])
-    
     langs = category["languages"]
     total = len(langs)
     if total == 0:
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Языки не найдены", callback_data="languages")]])
-    
-    if page < 0:
-        page = 0
-    if page >= total:
-        page = total - 1
-    
+    page = max(0, min(page, total - 1))
     current_lang = langs[page]
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="Установить", url=current_lang["link"]))
-    nav_row = []
+    nav = []
     if page > 0:
-        nav_row.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"lang_page_{category_slug}_{page-1}"))
-    nav_row.append(InlineKeyboardButton(text=f"{page+1}/{total}", callback_data="noop"))
+        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"lang_page_{category_slug}_{page-1}"))
+    nav.append(InlineKeyboardButton(text=f"{page+1}/{total}", callback_data="noop"))
     if page < total - 1:
-        nav_row.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_page_{category_slug}_{page+1}"))
-    kb.row(*nav_row)
+        nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_page_{category_slug}_{page+1}"))
+    kb.row(*nav)
     kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
-    kb.add(InlineKeyboardButton(text="Добавить в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages"))
+    kb.row(InlineKeyboardButton(text="Добавить в группу", callback_data="add_to_group"))
     return kb.as_markup()
-
 def bot_link_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💋Бот с темками 👉", url="https://t.me/TT_temki_bot")]
+    ])
+def add_group_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Добавить", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages")]
     ])
 # =========================
 # ОБРАБОТЧИКИ
@@ -231,9 +246,8 @@ async def start(message: Message):
                 "У меня есть команды которые ты можешь использовать здесь 😋 Мои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
                 reply_markup=bot_link_keyboard()
             )
-        return  # Игнорируем простой /start в группе или неверный arg
+        return
     
-    # Обычный /start только в личке
     campaign = args[1] if len(args) > 1 else "organic"
     if campaign not in db["campaigns"]:
         campaign = "organic"
@@ -266,8 +280,38 @@ async def random_theme(message: Message, state: FSMContext):
     if not await ensure_subscribed(message.from_user.id):
         await message.answer("❣️ Подпишись на канал для использования команды.")
         return
-    await message.answer("С какого девайса? Выбери:", reply_markup=device_keyboard())
+    await message.answer("С какого девайса? Выбери:", reply_markup=device_keyboard("random_"))
     await state.set_state(RandomThemeStates.waiting_for_device)
+
+@dp.callback_query(F.data.startswith("random_"), RandomThemeStates.waiting_for_device)
+async def process_random_theme_device(call: CallbackQuery, state: FSMContext):
+    device = call.data.replace("random_", "")
+    category_row = random.choice(CATEGORIES)
+    _, category_slug = random.choice(category_row)
+    category = SLUG_TO_CATEGORY[category_slug]
+    folder = f"themes/{device}/{category}/"
+    if not os.path.exists(folder):
+        await call.message.edit_text("❌ Темы не найдены")
+        await state.clear()
+        return
+    themes = [f for f in os.listdir(folder) if not f.startswith(".") and not f.endswith("_preview.jpg")]
+    if not themes:
+        await call.message.edit_text("❌ Темы не найдены")
+        await state.clear()
+        return
+    theme_file = random.choice(themes)
+    filename_no_ext = os.path.splitext(theme_file)[0]
+    preview_file = f"{folder}{filename_no_ext}_preview.jpg"
+    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
+    theme_path = f"{folder}{filename_no_ext}{extensions.get(device, '')}"
+    if os.path.exists(preview_file):
+        await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
+    if os.path.exists(theme_path):
+        await bot.send_document(call.from_user.id, document=FSInputFile(theme_path),
+                                caption="Нажми для установки случайной темы!\n\nТема создана в @TT_temki_bot 😉")
+    else:
+        await call.answer("❌ Файл темы не найден", show_alert=True)
+    await state.clear()
 
 @dp.message(Command("randomlanguage"))
 async def random_language(message: Message):
@@ -293,27 +337,94 @@ async def random_language(message: Message):
     await message.answer(f"Случайный язык: {lang['name']}", reply_markup=kb)
 
 @dp.message(F.photo & F.caption.startswith("/bg"))
-async def set_bg(message: Message):
+async def set_bg(message: Message, state: FSMContext):
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("Эта команда работает только в группах.")
         return
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
-    await bot.download_file(file.file_path, "temp_bg.jpg")
-    with Image.open("temp_bg.jpg") as img:
-        img = img.resize((1, 1))
-        r, g, b = img.getpixel((0, 0))
-        bg_color = f"#{r:02x}{g:02x}{b:02x}"
-    theme_content = f"chat_background_color={bg_color}\naccent_color={bg_color}"
-    theme_file = "custom_bg.attheme"
-    with open(theme_file, "w") as f:
-        f.write(theme_content)
-    await message.answer_document(document=FSInputFile(theme_file), caption="Вот тема на основе твоего изображения! Установи её.")
-    os.remove("temp_bg.jpg")
+    temp_photo = "temp_bg.jpg"
+    await bot.download_file(file.file_path, temp_photo)
+    await state.update_data(photo_path=temp_photo)
+    await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
+    await state.set_state(CustomThemeStates.waiting_for_device)
+
+@dp.callback_query(F.data == "make_theme_photo")
+async def make_theme_photo(call: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(call.from_user.id):
+        await call.answer("❣️ Подпишись на канал для использования.")
+        return
+    await call.message.answer("Пришли фото для темы.")
+    await state.set_state(CustomThemeStates.waiting_for_photo)
+    await call.answer()
+
+@dp.message(F.photo, CustomThemeStates.waiting_for_photo)
+async def receive_photo(message: Message, state: FSMContext):
+    photo = message.photo[-1]
+    file = await bot.get_file(photo.file_id)
+    temp_photo = "temp_bg.jpg"
+    await bot.download_file(file.file_path, temp_photo)
+    await state.update_data(photo_path=temp_photo)
+    await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
+    await state.set_state(CustomThemeStates.waiting_for_device)
+@dp.callback_query(F.data.startswith("bg_"), CustomThemeStates.waiting_for_device)
+async def process_bg_device(call: CallbackQuery, state: FSMContext):
+    device = call.data.replace("bg_", "")
+    data = await state.get_data()
+    photo_path = data.get("photo_path")
+    if not photo_path or not os.path.exists(photo_path):
+        await call.answer("Ошибка с фото.")
+        await state.clear()
+        return
+    # Конвертируем в PNG для base64
+    png_path = "temp_bg.png"
+    with Image.open(photo_path) as img:
+        img.save(png_path, "PNG")
+    with open(png_path, "rb") as f:
+        bg_base64 = base64.b64encode(f.read()).decode("utf-8")
+    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tdesktop-theme"}
+    theme_file = f"custom_bg{extensions.get(device, '.attheme')}"
+    if device == "windows":
+        # Для desktop - zip с background.jpg и palette.tdesktop-palette (пустой)
+        palette_content = ""  # Пустая палитра
+        with open("palette.tdesktop-palette", "w") as p:
+            p.write(palette_content)
+        with zipfile.ZipFile(theme_file, "w") as zipf:
+            zipf.write("temp_bg.jpg", "background.jpg")
+            zipf.write("palette.tdesktop-palette", "tiled.png")  # Или background.jpg, but for wallpaper
+        os.remove("palette.tdesktop-palette")
+    else:
+        # Для Android/iOS - text with wallpaper base64
+        theme_content = f"wallPaper={bg_base64}\n"
+        with open(theme_file, "w") as f:
+            f.write(theme_content)
+    
+    await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
+                            caption="Вот тема с твоим фото на фоне! Установи её.")
+    os.remove(photo_path)
+    os.remove(png_path)
     os.remove(theme_file)
+    await state.clear()
+    await call.answer()
+
 # =========================
 # CALLBACKS
 # =========================
+@dp.callback_query(F.data == "add_to_group")
+async def show_group_info(call: CallbackQuery):
+    await bot.send_photo(
+        call.from_user.id,
+        photo=FSInputFile(GROUP_START_IMAGE),
+        caption="Отправь в чат картинку с подписью \"/bg\" и я сделаю из нее фон для твоего Telegram или переходи в бот, там много интересного😉.",
+        reply_markup=add_group_keyboard()
+    )
+    await bot.send_message(
+        call.from_user.id,
+        "У меня есть команды которые ты можешь использовать здесь 😋 Мои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
+        reply_markup=add_group_keyboard()
+    )
+    await call.answer()
+
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: CallbackQuery):
     await call.message.edit_text("😋 Выбери нужное:", reply_markup=menu_keyboard())
@@ -323,7 +434,16 @@ async def select_device(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     device = call.data.replace("device_", "")
-    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
+    await call.message.edit_text("Выбери категорию:", reply_markup=themes_categories_keyboard(device))
+
+@dp.callback_query(F.data.startswith("themes_cat_page_"))
+async def paginate_themes_categories(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    parts = call.data.split("_")
+    device = parts[3]
+    page = int(parts[4])
+    await call.message.edit_text("Выбери категорию:", reply_markup=themes_categories_keyboard(device, page))
 
 @dp.callback_query(F.data.startswith("category_"))
 async def select_category(call: CallbackQuery):
@@ -348,13 +468,41 @@ async def back_to_categories(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     device = call.data.replace("back_to_categories_", "")
-    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
+    await call.message.edit_text("Выбери категорию:", reply_markup=themes_categories_keyboard(device))
 
 @dp.callback_query(F.data == "themes")
 async def choose_device(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     await call.message.edit_text("С какого девайса ты?", reply_markup=device_keyboard())
+
+@dp.callback_query(F.data.startswith("random_theme_"))
+async def random_theme_callback(call: CallbackQuery, state: FSMContext):
+    device = call.data.replace("random_theme_", "")
+    category_row = random.choice(CATEGORIES)
+    _, category_slug = random.choice(category_row)
+    category = SLUG_TO_CATEGORY[category_slug]
+    folder = f"themes/{device}/{category}/"
+    if not os.path.exists(folder):
+        await call.answer("❌ Темы не найдены")
+        return
+    themes = [f for f in os.listdir(folder) if not f.startswith(".") and not f.endswith("_preview.jpg")]
+    if not themes:
+        await call.answer("❌ Темы не найдены")
+        return
+    theme_file = random.choice(themes)
+    filename_no_ext = os.path.splitext(theme_file)[0]
+    preview_file = f"{folder}{filename_no_ext}_preview.jpg"
+    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
+    theme_path = f"{folder}{filename_no_ext}{extensions.get(device, '')}"
+    if os.path.exists(preview_file):
+        await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
+    if os.path.exists(theme_path):
+        await bot.send_document(call.from_user.id, document=FSInputFile(theme_path),
+                                caption="Нажми для установки случайной темы!\n\nТема создана в @TT_temki_bot 😉")
+    else:
+        await call.answer("❌ Файл темы не найден", show_alert=True)
+    await call.answer()
 
 @dp.callback_query(F.data.startswith("install_"))
 async def install_theme(call: CallbackQuery):
@@ -474,6 +622,13 @@ async def choose_language_category(call: CallbackQuery):
         return
     await call.message.edit_text("Выбери категорию языков:", reply_markup=languages_categories_keyboard())
 
+@dp.callback_query(F.data.startswith("lang_cat_page_"))
+async def paginate_languages_categories(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    page = int(call.data.replace("lang_cat_page_", ""))
+    await call.message.edit_text("Выбери категорию языков:", reply_markup=languages_categories_keyboard(page))
+
 @dp.callback_query(F.data.startswith("lang_category_"))
 async def select_language_category(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
@@ -493,8 +648,7 @@ async def paginate_languages(call: CallbackQuery):
         return
     parts = call.data.split("_")
     slug = parts[2]
-    page_str = parts[3]
-    page = int(page_str)
+    page = int(parts[3])
     category_name = SLUG_TO_LANG_CATEGORY.get(slug)
     current_lang = next((cat for cat in languages_db["categories"] if cat["slug"] == slug), None)["languages"][page]
     await call.message.edit_text(f"🎨 {category_name}: {current_lang['name']}", reply_markup=languages_pagination_keyboard(slug, page))
@@ -503,51 +657,35 @@ async def paginate_languages(call: CallbackQuery):
 async def noop(call: CallbackQuery):
     await call.answer()
 
+@dp.callback_query(F.data == "random_language")
+async def random_language_callback(call: CallbackQuery):
+    categories = languages_db["categories"]
+    if not categories:
+        await call.answer("❌ Нет языков")
+        return
+    category = random.choice(categories)
+    langs = category["languages"]
+    if not langs:
+        await call.answer("❌ Нет языков в категории")
+        return
+    lang = random.choice(langs)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Установить", url=lang["link"])]
+    ])
+    await bot.send_message(call.from_user.id, f"Случайный язык: {lang['name']}", reply_markup=kb)
+    await call.answer()
+
 @dp.callback_query(F.data.startswith("device_"), RandomThemeStates.waiting_for_device)
 async def process_random_theme_device(call: CallbackQuery, state: FSMContext):
     device = call.data.replace("device_", "")
-    category_row = random.choice(CATEGORIES)
-    _, category_slug = random.choice(category_row)
-    category = SLUG_TO_CATEGORY[category_slug]
-    folder = f"themes/{device}/{category}/"
-    if not os.path.exists(folder):
-        await call.message.edit_text("❌ Темы не найдены")
-        await state.clear()
-        return
-    themes = [f for f in os.listdir(folder) if not f.startswith(".") and not f.endswith("_preview.jpg")]
-    if not themes:
-        await call.message.edit_text("❌ Темы не найдены")
-        await state.clear()
-        return
-    theme_file = random.choice(themes)
-    filename_no_ext = os.path.splitext(theme_file)[0]
-    preview_file = f"{folder}{filename_no_ext}_preview.jpg"
-    extensions = {"ios": ".tgios-theme", "android": ".attheme", "windows": ".tgdesktop-theme"}
-    theme_path = f"{folder}{filename_no_ext}{extensions.get(device, '')}"
-    if os.path.exists(preview_file):
-        await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр случайной темы")
-    if os.path.exists(theme_path):
-        await bot.send_document(call.from_user.id, document=FSInputFile(theme_path),
-                                caption="Нажми для установки случайной темы!\n\nТема создана в @TT_temki_bot 😉")
-    else:
-        await call.answer("❌ Файл темы не найден", show_alert=True)
+    # ... (остальной код как был)
     await state.clear()
-# =========================
-# ОБРАБОТКА ДОБАВЛЕНИЯ В ГРУППУ
-# =========================
-@dp.my_chat_member()
-async def bot_added_to_group(update: ChatMemberUpdated):
-    if update.new_chat_member.status == "member" and update.chat.type in ("group", "supergroup"):
-        user_id = update.from_user.id
-        try:
-            await bot.send_message(user_id, "Нажмите кнопку добавить бота в группу, выберите группу в которую нужно добавить бота и нажмите Сохранить. в группе напишите /start temki")
-        except Exception as e:
-            print(f"Ошибка отправки инструкции: {e}")
+
 # =========================
 # ЗАПУСК
 # =========================
 async def main():
-    await dp.start_polling(bot, allowed_updates=["message", "callback_query", "my_chat_member"])
+    await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
 
 if __name__ == "__main__":
     import logging
