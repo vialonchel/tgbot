@@ -39,6 +39,8 @@ USERS_FILE = "users.json"
 ADMINS = {913949366}
 BOT_USERNAME = "TT_temki_bot"
 GROUP_START_IMAGE = "groupstart.jpg"
+START_MENU_TEXT = "Приветик!! Тут ты можешь можешь настроить свой Telegram 💞\n\nСкорее выбирай:"
+REPEAT_MENU_TEXT = "Выберай пункт меню:  💞💞"
 # =========================
 # BOT
 # =========================
@@ -251,6 +253,7 @@ def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKe
     if page < total - 1:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_page_{category_slug}_{page+1}"))
     kb.row(*nav)
+    kb.row(InlineKeyboardButton(text="⬅️ К категориям", callback_data="languages"))
     kb.row(InlineKeyboardButton(text="⬅️ В меню", callback_data="back_menu"))
     kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
     return kb.as_markup()
@@ -289,7 +292,7 @@ async def start(message: Message):
     if is_subscribed:
         db["users"][str(message.from_user.id)]["subscribed"] = True
         save_users()
-        await message.answer("😋 Выбери нужное:", reply_markup=menu_keyboard())
+        await message.answer(START_MENU_TEXT, reply_markup=menu_keyboard())
     else:
         await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
     await message.delete()
@@ -427,7 +430,7 @@ async def process_bg_device(call: CallbackQuery, state: FSMContext):
     await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
                             caption="Вот тема с твоим фото на фоне! Установи её.")
     await asyncio.sleep(0.5)
-    await bot.send_message(call.from_user.id, "😋 Выбери нужное:", reply_markup=menu_keyboard())
+    await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
     os.remove(photo_path)
     os.remove(png_path)
     os.remove(theme_file)
@@ -454,7 +457,7 @@ async def show_group_info(call: CallbackQuery):
 
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: CallbackQuery):
-    await call.message.edit_text("😋 Выбери нужное:", reply_markup=menu_keyboard())
+    await call.message.edit_text(REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
 
 @dp.callback_query(F.data.startswith("device_"))
 async def select_device(call: CallbackQuery):
@@ -560,7 +563,7 @@ async def check_subscription(call: CallbackQuery):
         if member.status in ("member", "administrator", "creator"):
             db["users"][uid]["subscribed"] = True
             save_users()
-            await call.message.edit_text("😋 Выбери нужное:", reply_markup=menu_keyboard())
+            await call.message.edit_text(REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
             return
     except:
         pass
