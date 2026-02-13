@@ -97,7 +97,7 @@ def load_languages():
 languages_db = load_languages()
 SLUG_TO_LANG_CATEGORY = {cat["slug"]: cat["name"] for cat in languages_db["categories"]}
 ALL_LANG_CATEGORIES = languages_db["categories"]  # Для пагинации языковых категорий
-LANG_PER_PAGE = 9
+LANG_PER_PAGE = 3
 # =========================
 # ПРОВЕРКА ПОДПИСКИ
 # =========================
@@ -221,9 +221,10 @@ def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
         kb.row(*row)
     
     nav = []
+    total_pages = max(1, (total + LANG_PER_PAGE - 1) // LANG_PER_PAGE)
     if page > 0:
         nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"lang_cat_page_{page-1}"))
-    nav.append(InlineKeyboardButton(text=f"{page+1}/{(total // LANG_PER_PAGE) + 1}", callback_data="noop"))
+    nav.append(InlineKeyboardButton(text=f"{page+1}/{total_pages}", callback_data="noop"))
     if end < total:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_cat_page_{page+1}"))
     kb.row(*nav)
@@ -692,6 +693,8 @@ async def noop(call: CallbackQuery):
 
 @dp.callback_query(F.data == "random_language")
 async def random_language_callback(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
     categories = languages_db["categories"]
     if not categories:
         await call.answer("❌ Нет языков")
@@ -708,6 +711,11 @@ async def random_language_callback(call: CallbackQuery):
         [InlineKeyboardButton(text="Установить", url=lang["link"])]
     ])
     await bot.send_message(call.from_user.id, f"Случайный язык: {lang['name']}\n{description}", reply_markup=kb)
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(call.from_user.id, "Выбери категорию языков:", reply_markup=languages_categories_keyboard())
     await call.answer()
 
 # =========================
