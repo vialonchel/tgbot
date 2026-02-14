@@ -159,8 +159,8 @@ def menu_keyboard():
             InlineKeyboardButton(text="темки", callback_data="themes"),
             InlineKeyboardButton(text="язычки", callback_data="languages")
         ],
-        [InlineKeyboardButton(text="сделать тему из фото", callback_data="make_theme_photo")],
-        [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]
+        [InlineKeyboardButton(text="сделать тему из фото", callback_data="make_theme_photo")]
+        # [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]  # временно отключено
     ])
 def admin_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -195,7 +195,7 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"cat_page_{device}_{page+1}"))
     kb.row(*nav)
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
-    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
+    # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
 def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
@@ -209,7 +209,7 @@ def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMa
         filename_no_ext = os.path.splitext(file)[0]
         kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{category}_{filename_no_ext}"))
     kb.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"back_to_categories_{device}"))
-    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
+    # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
 def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
@@ -231,7 +231,7 @@ def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     kb.row(*nav)
     kb.row(InlineKeyboardButton(text="рандомный язык", callback_data="random_language"))
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
-    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
+    # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
 def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKeyboardMarkup:
     category = next((cat for cat in languages_db["categories"] if cat["slug"] == category_slug), None)
@@ -254,16 +254,16 @@ def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKe
     kb.row(*nav)
     kb.row(InlineKeyboardButton(text="⬅️ К категориям", callback_data="languages"))
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
-    kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))
+    # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
 def bot_link_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💋Бот с темками 👉", url="https://t.me/TT_temki_bot")]
     ])
-def add_group_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Добавить бота в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages")]
-    ])
+# def add_group_keyboard():
+#     return InlineKeyboardMarkup(inline_keyboard=[
+#         [InlineKeyboardButton(text="Добавить бота в группу", url="https://t.me/TT_temki_bot?startgroup&admin=post_messages+delete_messages")]
+#     ])
 # =========================
 # ОБРАБОТЧИКИ
 # =========================
@@ -441,20 +441,20 @@ async def process_bg_device(call: CallbackQuery, state: FSMContext):
 # =========================
 # CALLBACKS
 # =========================
-@dp.callback_query(F.data == "add_to_group")
-async def show_group_info(call: CallbackQuery):
-    await bot.send_photo(
-        call.from_user.id,
-        photo=FSInputFile(GROUP_START_IMAGE),
-        caption="Отправь в чат картинку с подписью \"/bg\" и я сделаю из нее фон для твоего Telegram или переходи в бот, там много интересного😉.",
-        reply_markup=add_group_keyboard()
-    )
-    await bot.send_message(
-        call.from_user.id,
-        "У меня есть команды которые ты можешь использовать здесь 😋 Мои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
-        reply_markup=add_group_keyboard()
-    )
-    await call.answer()
+# @dp.callback_query(F.data == "add_to_group")
+# async def show_group_info(call: CallbackQuery):
+#     await bot.send_photo(
+#         call.from_user.id,
+#         photo=FSInputFile(GROUP_START_IMAGE),
+#         caption="Отправь в чат картинку с подписью \"/bg\" и я сделаю из нее фон для твоего Telegram или переходи в бот, там много интересного😉.",
+#         reply_markup=add_group_keyboard()
+#     )
+#     await bot.send_message(
+#         call.from_user.id,
+#         "У меня есть команды которые ты можешь использовать здесь 😋 Мои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
+#         reply_markup=add_group_keyboard()
+#     )
+#     await call.answer()
 
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: CallbackQuery):
