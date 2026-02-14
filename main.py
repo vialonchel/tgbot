@@ -270,7 +270,7 @@ def add_group_keyboard():
 @dp.message(Command("start"))
 async def start(message: Message):
     args = message.text.split(maxsplit=1)
-    if message.chat.type == "private":
+    if message.chat.type in ("group", "supergroup"):
         await message.answer(
             "У меня есть команды которые ты можешь использовать в групповом чате 😋 \n\nМои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
             reply_markup=bot_link_keyboard()
