@@ -29,6 +29,7 @@ CATEGORIES = [
 SLUG_TO_CATEGORY = {slug: name for row in CATEGORIES for name, slug in row}
 ALL_THEME_CATEGORIES = [item for sublist in CATEGORIES for item in sublist]  # Плоский список для пагинации
 THEMES_PER_PAGE = 9  # 3 ряда по 3
+THEMES_IN_CATEGORY_PER_PAGE = 9  # Тем на страницу внутри выбранной категории
 
 # =========================
 # Настройки
@@ -451,19 +452,53 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
-def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMarkup:
+def themes_keyboard_for_category(device: str, category_slug: str, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
+    category = SLUG_TO_CATEGORY.get(category_slug)
+    if not category:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Категория не найдена", callback_data=f"back_to_categories_{device}")]])
+
     folder = os.path.join(resolve_device_folder(device), category)
     if not os.path.exists(folder):
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
     ext = theme_extension(device)
-    for file in os.listdir(folder):
-        if file.startswith(".") or file.endswith("_preview.jpg") or not file.endswith(ext):
-            continue
-        filename_no_ext = os.path.splitext(file)[0]
-        kb.add(InlineKeyboardButton(text=f"📦 {filename_no_ext}", callback_data=f"install_{device}_{category}_{filename_no_ext}"))
-    kb.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"back_to_categories_{device}"))
-    # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
+    themes = sorted(
+        [
+            os.path.splitext(file)[0]
+            for file in os.listdir(folder)
+            if not file.startswith(".") and file.endswith(ext)
+        ]
+    )
+    if not themes:
+        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
+
+    total = len(themes)
+    total_pages = max(1, (total + THEMES_IN_CATEGORY_PER_PAGE - 1) // THEMES_IN_CATEGORY_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * THEMES_IN_CATEGORY_PER_PAGE
+    end = min(start + THEMES_IN_CATEGORY_PER_PAGE, total)
+    page_themes = themes[start:end]
+
+    for i in range(0, len(page_themes), 3):
+        row = [
+            InlineKeyboardButton(
+                text=f"📦 {filename_no_ext}",
+                callback_data=f"install|{device}|{category_slug}|{filename_no_ext}"
+            )
+            for filename_no_ext in page_themes[i:i+3]
+        ]
+        kb.row(*row)
+
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"theme_page|{device}|{category_slug}|{page-1}"))
+    nav.append(InlineKeyboardButton(text=f"📄 {page+1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"theme_page|{device}|{category_slug}|{page+1}"))
+    kb.row(*nav)
+
+    kb.row(InlineKeyboardButton(text="📚 ⬅️ К категориям", callback_data=f"back_to_categories_{device}"))
+    kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     return kb.as_markup()
 def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
@@ -785,7 +820,23 @@ async def select_category(call: CallbackQuery):
     if not category:
         await call.answer("❌ Категория не найдена")
         return
-    await call.message.edit_text(f"🎨 {category}:", reply_markup=themes_keyboard_for_category(device, category))
+    await call.message.edit_text(f"🎨 {category}:", reply_markup=themes_keyboard_for_category(device, slug, page=0))
+
+@dp.callback_query(F.data.startswith("theme_page|"))
+async def paginate_themes_in_category(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    try:
+        _, device, slug, page_str = call.data.split("|", 3)
+        page = int(page_str)
+    except (ValueError, IndexError):
+        await call.answer("❌ Ошибка пагинации", show_alert=True)
+        return
+    category = SLUG_TO_CATEGORY.get(slug)
+    if not category:
+        await call.answer("❌ Категория не найдена", show_alert=True)
+        return
+    await call.message.edit_text(f"🎨 {category}:", reply_markup=themes_keyboard_for_category(device, slug, page=page))
 
 @dp.callback_query(F.data.startswith("back_to_devices_"))
 async def back_to_devices(call: CallbackQuery):
@@ -835,11 +886,19 @@ async def random_theme_callback(call: CallbackQuery, state: FSMContext):
         await call.answer("❌ Файл темы не найден", show_alert=True)
     await call.answer()
 
-@dp.callback_query(F.data.startswith("install_"))
+@dp.callback_query(F.data.startswith("install|"))
 async def install_theme(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
-    _, device, category, filename = call.data.split("_", 3)
+    try:
+        _, device, category_slug, filename = call.data.split("|", 3)
+    except ValueError:
+        await call.answer("❌ Ошибка установки темы", show_alert=True)
+        return
+    category = SLUG_TO_CATEGORY.get(category_slug)
+    if not category:
+        await call.answer("❌ Категория не найдена", show_alert=True)
+        return
     ext = theme_extension(device)
     base_dir = os.path.join(resolve_device_folder(device), category)
     theme_file = os.path.join(base_dir, f"{filename}{ext}")
