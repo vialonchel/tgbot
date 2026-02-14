@@ -39,7 +39,7 @@ USERS_FILE = "users.json"
 ADMINS = {913949366}
 BOT_USERNAME = "TT_temki_bot"
 GROUP_START_IMAGE = "groupstart.jpg"
-START_MENU_TEXT = "Приветик!! Тут ты можешь можешь настроить свой Telegram 💞\n\nСкорее выбирай:"
+START_MENU_TEXT = "Тут ты можешь можешь настроить свой Telegram 💞\n\nСкорее выбирай:"
 REPEAT_MENU_TEXT = "Выберай пункт меню:  💞💞"
 # =========================
 # BOT
@@ -282,7 +282,7 @@ async def start(message: Message):
     if campaign not in db["campaigns"]:
         campaign = "organic"
     ensure_user(message.from_user, campaign)
-    await message.answer(f"Привет, {message.from_user.first_name}!")
+    await message.answer(f"Приветик, {message.from_user.first_name}!")
     try:
         member = await bot.get_chat_member(CHANNEL_USERNAME, message.from_user.id)
         is_subscribed = member.status in ("member", "administrator", "creator")
