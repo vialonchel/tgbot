@@ -7,7 +7,7 @@ import zipfile
 from PIL import Image
 from datetime import datetime, timezone
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, InputSticker
 from aiogram.filters import Command
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.context import FSMContext
@@ -58,18 +58,22 @@ class RandomThemeStates(StatesGroup):
 class CustomThemeStates(StatesGroup):
     waiting_for_photo = State()
     waiting_for_device = State()
+class StickerStates(StatesGroup):
+    waiting_for_source = State()
 # =========================
 # ХРАНИЛИЩЕ
 # =========================
 def load_users():
     if not os.path.exists(USERS_FILE):
-        return {"users": {}, "campaigns": ["organic"]}
+        return {"users": {}, "campaigns": ["organic"], "sticker_packs": []}
     with open(USERS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
     if "users" not in data:
         data["users"] = {}
     if "campaigns" not in data:
         data["campaigns"] = ["organic"]
+    if "sticker_packs" not in data:
+        data["sticker_packs"] = []
     return data
 
 def save_users():
@@ -85,9 +89,16 @@ def ensure_user(tg_user, campaign="organic"):
             "first_start": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
             "subscribed": False,
             "device": None,
-            "campaign": campaign
+            "campaign": campaign,
+            "sticker_packs": [],
+            "sticker_pack_seq": 0
         }
         save_users()
+    else:
+        if "sticker_packs" not in db["users"][uid]:
+            db["users"][uid]["sticker_packs"] = []
+        if "sticker_pack_seq" not in db["users"][uid]:
+            db["users"][uid]["sticker_pack_seq"] = 0
     return uid
 
 def load_languages():
@@ -115,7 +126,9 @@ async def ensure_subscribed(user_id: int):
                     "first_start": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     "subscribed": False,
                     "device": None,
-                    "campaign": "organic"
+                    "campaign": "organic",
+                    "sticker_packs": [],
+                    "sticker_pack_seq": 0
                 }
             db["users"][uid]["subscribed"] = True
             save_users()
@@ -145,6 +158,58 @@ def find_theme_preview(folder: str, theme_name: str) -> str | None:
     if os.path.exists(legacy_preview):
         return legacy_preview
     return None
+
+def sticker_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="мои стикеры", callback_data="stickers_my"),
+            InlineKeyboardButton(text="создать стикеры", callback_data="stickers_create")
+        ],
+        [InlineKeyboardButton(text="случайный стикерпак", callback_data="stickers_random")],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
+    ])
+
+def make_sticker_pack_name(user_id: int, seq: int) -> str:
+    return f"u{user_id}_{seq}_by_{BOT_USERNAME.lower()}"
+
+def build_sticker_png(source_path: str, output_path: str):
+    with Image.open(source_path) as img:
+        img = img.convert("RGBA")
+        resampling = getattr(Image, "Resampling", Image).LANCZOS
+        img.thumbnail((512, 512), resampling)
+        canvas = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+        offset = ((512 - img.width) // 2, (512 - img.height) // 2)
+        canvas.paste(img, offset, img)
+        canvas.save(output_path, "PNG")
+
+def register_sticker_pack(uid: str, name: str, title: str):
+    if name not in db["users"][uid]["sticker_packs"]:
+        db["users"][uid]["sticker_packs"].append(name)
+    if not any(p.get("name") == name for p in db["sticker_packs"]):
+        db["sticker_packs"].append({"name": name, "title": title, "owner": uid})
+    save_users()
+
+async def create_sticker_set(user_id: int, pack_name: str, pack_title: str, png_path: str):
+    sticker = InputSticker(sticker=FSInputFile(png_path), emoji_list=["💞"], format="static")
+    try:
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=pack_name,
+            title=pack_title,
+            stickers=[sticker],
+            sticker_format="static"
+        )
+    except TypeError:
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=pack_name,
+            title=pack_title,
+            stickers=[sticker]
+        )
+
+async def add_sticker_to_pack(user_id: int, pack_name: str, png_path: str):
+    sticker = InputSticker(sticker=FSInputFile(png_path), emoji_list=["💞"], format="static")
+    await bot.add_sticker_to_set(user_id=user_id, name=pack_name, sticker=sticker)
 # =========================
 # КЛАВИАТУРЫ
 # =========================
@@ -157,7 +222,8 @@ def menu_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="темки", callback_data="themes"),
-            InlineKeyboardButton(text="язычки", callback_data="languages")
+            InlineKeyboardButton(text="язычки", callback_data="languages"),
+            InlineKeyboardButton(text="стикеры", callback_data="stickers")
         ],
         [InlineKeyboardButton(text="сделать тему из фото", callback_data="make_theme_photo")]
         # [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]  # временно отключено
@@ -657,6 +723,124 @@ async def choose_language_category(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     await call.message.edit_text("Выбери категорию языков:", reply_markup=languages_categories_keyboard())
+
+@dp.callback_query(F.data == "stickers")
+async def stickers_menu(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    ensure_user(call.from_user)
+    await call.message.edit_text("Стикеры:", reply_markup=sticker_menu_keyboard())
+
+@dp.callback_query(F.data == "stickers_my")
+async def stickers_my(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    uid = ensure_user(call.from_user)
+    packs = db["users"][uid].get("sticker_packs", [])
+    if not packs:
+        await call.answer("У тебя пока нет стикерпаков", show_alert=True)
+        return
+    links = [f"https://t.me/addstickers/{name}" for name in packs]
+    text = "Твои стикерпаки:\n\n" + "\n".join(links)
+    await call.message.edit_text(text, reply_markup=sticker_menu_keyboard())
+
+@dp.callback_query(F.data == "stickers_random")
+async def stickers_random(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    all_packs = db.get("sticker_packs", [])
+    if not all_packs:
+        await call.answer("Пока нет ни одного стикерпака", show_alert=True)
+        return
+    pack = random.choice(all_packs)
+    pack_name = pack.get("name") if isinstance(pack, dict) else str(pack)
+    if not pack_name:
+        await call.answer("Пока нет ни одного стикерпака", show_alert=True)
+        return
+    await bot.send_message(
+        call.from_user.id,
+        f"Случайный стикерпак:\nhttps://t.me/addstickers/{pack_name}"
+    )
+    await call.answer()
+
+@dp.callback_query(F.data == "stickers_create")
+async def stickers_create(call: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    ensure_user(call.from_user)
+    await call.message.edit_text(
+        "Пришли фото или файл изображения, и я сделаю из него стикер.",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]]
+        )
+    )
+    await state.set_state(StickerStates.waiting_for_source)
+    await call.answer()
+
+@dp.message(StickerStates.waiting_for_source, F.photo | F.document)
+async def process_sticker_source(message: Message, state: FSMContext):
+    if not await ensure_subscribed(message.from_user.id):
+        await state.clear()
+        return
+
+    uid = ensure_user(message.from_user)
+    user_data = db["users"][uid]
+    source_path = f"sticker_src_{uid}_{random.randint(1000, 9999)}"
+    png_path = f"sticker_{uid}_{random.randint(1000, 9999)}.png"
+
+    try:
+        if message.photo:
+            photo = message.photo[-1]
+            file = await bot.get_file(photo.file_id)
+            await bot.download_file(file.file_path, source_path)
+        elif message.document:
+            mime = message.document.mime_type or ""
+            if not mime.startswith("image/"):
+                await message.answer("Нужен файл изображения (jpg/png/webp).")
+                return
+            file = await bot.get_file(message.document.file_id)
+            await bot.download_file(file.file_path, source_path)
+        else:
+            await message.answer("Пришли фото или файл изображения.")
+            return
+
+        build_sticker_png(source_path, png_path)
+
+        packs = user_data.get("sticker_packs", [])
+        pack_name = packs[-1] if packs else None
+        added_to_existing = False
+
+        if pack_name:
+            try:
+                await add_sticker_to_pack(message.from_user.id, pack_name, png_path)
+                added_to_existing = True
+            except Exception:
+                pack_name = None
+
+        if not pack_name:
+            user_data["sticker_pack_seq"] = user_data.get("sticker_pack_seq", 0) + 1
+            seq = user_data["sticker_pack_seq"]
+            pack_name = make_sticker_pack_name(message.from_user.id, seq)
+            pack_title = f"Стикеры {message.from_user.first_name} #{seq}"
+            await create_sticker_set(message.from_user.id, pack_name, pack_title, png_path)
+            register_sticker_pack(uid, pack_name, pack_title)
+            status_text = "✅ Создал новый стикерпак и добавил стикер:"
+        else:
+            status_text = "✅ Добавил стикер в твой стикерпак:" if added_to_existing else "✅ Добавил стикер:"
+
+        await message.answer(f"{status_text}\nhttps://t.me/addstickers/{pack_name}")
+        await message.answer("Стикеры:", reply_markup=sticker_menu_keyboard())
+        await state.clear()
+    except Exception:
+        await message.answer("Не удалось сделать стикер. Пришли другое изображение.")
+    finally:
+        for path in (source_path, png_path):
+            if os.path.exists(path):
+                os.remove(path)
+
+@dp.message(StickerStates.waiting_for_source)
+async def process_sticker_source_invalid(message: Message):
+    await message.answer("Пришли фото или файл изображения (jpg/png/webp).")
 
 @dp.callback_query(F.data.startswith("lang_cat_page_"))
 async def paginate_languages_categories(call: CallbackQuery):
