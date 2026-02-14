@@ -176,10 +176,10 @@ def find_theme_preview(folder: str, theme_name: str) -> str | None:
 def sticker_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📂 мои стикеры", callback_data="stickers_my"),
-            InlineKeyboardButton(text="✂️ создать стикеры", callback_data="stickers_create")
+            InlineKeyboardButton(text="📂 Мои стикеры", callback_data="stickers_my"),
+            InlineKeyboardButton(text="✂️ Создать стикеры", callback_data="stickers_create")
         ],
-        [InlineKeyboardButton(text="🎲 случайный стикерпак", callback_data="stickers_random")],
+        [InlineKeyboardButton(text="🎲 Случайный стикерпак", callback_data="stickers_random")],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
     ])
 
@@ -212,25 +212,25 @@ def pack_install_link(pack: dict, pack_name: str) -> str:
 def random_sticker_keyboard(install_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📥 установить", url=install_url),
-            InlineKeyboardButton(text="▶️ вперед", callback_data="stickers_random_next")
+            InlineKeyboardButton(text="📥 Установить", url=install_url),
+            InlineKeyboardButton(text="▶️ Вперед", callback_data="stickers_random_next")
         ],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
     ])
 
 def video_note_request_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ отменить", callback_data="video_note_cancel")]
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="video_note_cancel")]
     ])
 
 def theme_photo_wait_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ отменить", callback_data="make_theme_photo_cancel")]
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="make_theme_photo_cancel")]
     ])
 
 def video_note_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="➡️ кружок из видео", url=f"https://t.me/{BOT_USERNAME}")]
+        [InlineKeyboardButton(text="➡️ Кружок из видео", url=f"https://t.me/{BOT_USERNAME}")]
     ])
 
 def build_sticker_png(source_path: str, output_path: str):
@@ -393,12 +393,12 @@ def subscribe_keyboard():
 def menu_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="🎨 темки", callback_data="themes"),
-            InlineKeyboardButton(text="🗣️ язычки", callback_data="languages"),
-            InlineKeyboardButton(text="🧩 стикеры", callback_data="stickers")
+            InlineKeyboardButton(text="🎨 Темки", callback_data="themes"),
+            InlineKeyboardButton(text="🗣️ Язычки", callback_data="languages"),
+            InlineKeyboardButton(text="🧩 Стикеры", callback_data="stickers")
         ],
-        [InlineKeyboardButton(text="🎬 кружок из видео", callback_data="video_note_menu")],
-        [InlineKeyboardButton(text="🖼️ сделать тему из фото", callback_data="make_theme_photo")]
+        [InlineKeyboardButton(text="🎬 Кружок из видео", callback_data="video_note_menu")],
+        [InlineKeyboardButton(text="🖼️ Сделать тему из фото", callback_data="make_theme_photo")]
         # [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]  # временно отключено
     ])
 def admin_keyboard():
@@ -468,7 +468,7 @@ def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     if end < total:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_cat_page_{page+1}"))
     kb.row(*nav)
-    kb.row(InlineKeyboardButton(text="🎲 рандомный язык", callback_data="random_language"))
+    kb.row(InlineKeyboardButton(text="🎲 Рандомный язык", callback_data="random_language"))
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
@@ -614,7 +614,8 @@ async def set_bg(message: Message, state: FSMContext):
     temp_photo = "temp_bg.jpg"
     await bot.download_file(file.file_path, temp_photo)
     await state.update_data(photo_path=temp_photo)
-    await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
+    device_msg = await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
+    await state.update_data(bg_device_message_id=device_msg.message_id)
     await state.set_state(CustomThemeStates.waiting_for_device)
 
 @dp.callback_query(F.data == "make_theme_photo")
@@ -657,7 +658,8 @@ async def receive_photo(message: Message, state: FSMContext):
     temp_photo = "temp_bg.jpg"
     await bot.download_file(file.file_path, temp_photo)
     await state.update_data(photo_path=temp_photo)
-    await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
+    device_msg = await message.answer("На каком устройстве установить тему?", reply_markup=device_keyboard("bg_"))
+    await state.update_data(bg_device_message_id=device_msg.message_id)
     await state.set_state(CustomThemeStates.waiting_for_device)
 
 @dp.callback_query(F.data.startswith("bg_"), CustomThemeStates.waiting_for_device)
@@ -696,6 +698,17 @@ async def process_bg_device(call: CallbackQuery, state: FSMContext):
     
     await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
                             caption="Вот тема с твоим фото на фоне! Установи её.")
+    bg_device_message_id = data.get("bg_device_message_id")
+    if bg_device_message_id:
+        try:
+            await bot.delete_message(call.message.chat.id, int(bg_device_message_id))
+        except Exception:
+            pass
+    else:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
     await asyncio.sleep(0.5)
     await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
     os.remove(photo_path)
