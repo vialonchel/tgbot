@@ -223,6 +223,11 @@ def video_note_request_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="❌ отменить", callback_data="video_note_cancel")]
     ])
 
+def theme_photo_wait_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ отменить", callback_data="make_theme_photo_cancel")]
+    ])
+
 def video_note_result_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="➡️ кружок из видео", url=f"https://t.me/{BOT_USERNAME}")]
@@ -617,8 +622,32 @@ async def make_theme_photo(call: CallbackQuery, state: FSMContext):
     if not await ensure_subscribed(call.from_user.id):
         await call.answer("❣️ Подпишись на канал для использования.")
         return
-    await call.message.answer("Пришли фото для темы.")
+    wait_message = await call.message.answer("Пришли фото для темы:", reply_markup=theme_photo_wait_keyboard())
+    await state.update_data(
+        theme_photo_wait_message_id=wait_message.message_id,
+        theme_photo_menu_message_id=call.message.message_id
+    )
     await state.set_state(CustomThemeStates.waiting_for_photo)
+    await call.answer()
+
+@dp.callback_query(F.data == "make_theme_photo_cancel", CustomThemeStates.waiting_for_photo)
+async def make_theme_photo_cancel(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    menu_message_id = data.get("theme_photo_menu_message_id")
+
+    if menu_message_id:
+        try:
+            await bot.delete_message(call.message.chat.id, int(menu_message_id))
+        except Exception:
+            pass
+
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await state.clear()
+    await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
     await call.answer()
 
 @dp.message(F.photo, CustomThemeStates.waiting_for_photo)
