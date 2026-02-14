@@ -243,6 +243,21 @@ def build_sticker_png(source_path: str, output_path: str):
         canvas.paste(img, offset, img)
         canvas.save(output_path, "PNG")
 
+def extract_sticker_pack_title(raw_text: str | None) -> str | None:
+    if not raw_text:
+        return None
+    text = raw_text.strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    for prefix in ("название:", "название", "пак:", "стикерпак:"):
+        if lowered.startswith(prefix):
+            text = text[len(prefix):].strip()
+            break
+    if not text:
+        return None
+    return text[:64]
+
 def build_wallpaper_jpg(source_path: str, output_path: str):
     with Image.open(source_path) as img:
         img = img.convert("RGB")
@@ -1011,10 +1026,15 @@ async def stickers_create(call: CallbackQuery, state: FSMContext):
         return
     ensure_user(call.from_user)
     await call.message.edit_text(
-        "Пришли фото или файл изображения, и я сделаю из него стикер.",
+        "Пришли фото или файл изображения, и я сделаю из него стикер.\n\n"
+        "Если хочешь, сначала отправь текст:\nНазвание: Мой пак",
         reply_markup=InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]]
         )
+    )
+    await state.update_data(
+        sticker_wait_message_id=call.message.message_id,
+        sticker_pack_title=None
     )
     await state.set_state(StickerStates.waiting_for_source)
     await call.answer()
@@ -1087,6 +1107,7 @@ async def process_sticker_source(message: Message, state: FSMContext):
 
     uid = ensure_user(message.from_user)
     user_data = db["users"][uid]
+    state_data = await state.get_data()
     source_path = f"sticker_src_{uid}_{random.randint(1000, 9999)}"
     png_path = f"sticker_{uid}_{random.randint(1000, 9999)}.png"
 
@@ -1108,8 +1129,13 @@ async def process_sticker_source(message: Message, state: FSMContext):
 
         build_sticker_png(source_path, png_path)
 
+        custom_title = state_data.get("sticker_pack_title")
+        caption_title = extract_sticker_pack_title(getattr(message, "caption", None))
+        if caption_title:
+            custom_title = caption_title
+
         packs = user_data.get("sticker_packs", [])
-        pack_name = packs[-1] if packs else None
+        pack_name = None if custom_title else (packs[-1] if packs else None)
         added_to_existing = False
 
         if pack_name:
@@ -1123,13 +1149,19 @@ async def process_sticker_source(message: Message, state: FSMContext):
             user_data["sticker_pack_seq"] = user_data.get("sticker_pack_seq", 0) + 1
             seq = user_data["sticker_pack_seq"]
             pack_name = make_sticker_pack_name(message.from_user.id, seq)
-            pack_title = f"Стикеры {message.from_user.first_name} #{seq}"
+            pack_title = custom_title or f"Стикеры {message.from_user.first_name} #{seq}"
             await create_sticker_set(message.from_user.id, pack_name, pack_title, png_path)
             register_sticker_pack(uid, pack_name, pack_title)
             status_text = "✅ Создал новый стикерпак и добавил стикер:"
         else:
             status_text = "✅ Добавил стикер в твой стикерпак:" if added_to_existing else "✅ Добавил стикер:"
 
+        wait_message_id = state_data.get("sticker_wait_message_id")
+        if wait_message_id:
+            try:
+                await bot.delete_message(message.chat.id, int(wait_message_id))
+            except Exception:
+                pass
         await message.answer(f"{status_text}\nhttps://t.me/addstickers/{pack_name}")
         await message.answer("Стикеры:", reply_markup=sticker_menu_keyboard())
         await state.clear()
@@ -1139,6 +1171,15 @@ async def process_sticker_source(message: Message, state: FSMContext):
         for path in (source_path, png_path):
             if os.path.exists(path):
                 os.remove(path)
+
+@dp.message(StickerStates.waiting_for_source, F.text)
+async def set_sticker_pack_title(message: Message, state: FSMContext):
+    title = extract_sticker_pack_title(message.text)
+    if not title:
+        await message.answer("Напиши так: Название: Мой пак")
+        return
+    await state.update_data(sticker_pack_title=title)
+    await message.answer(f"✅ Название сохранено: {title}\nТеперь пришли фото или файл изображения.")
 
 @dp.message(StickerStates.waiting_for_source)
 async def process_sticker_source_invalid(message: Message):
