@@ -967,21 +967,43 @@ async def video_note_menu(call: CallbackQuery, state: FSMContext):
         return
     ensure_user(call.from_user)
     await state.set_state(VideoNoteStates.waiting_for_video)
-    await bot.send_message(
+    wait_message = await bot.send_message(
         call.from_user.id,
         "Пришли видео, и я сделаю из него кружок.",
         reply_markup=video_note_request_keyboard()
+    )
+    await state.update_data(
+        video_note_menu_message_id=call.message.message_id,
+        video_note_wait_message_id=wait_message.message_id
     )
     await call.answer()
 
 @dp.callback_query(F.data == "video_note_cancel", VideoNoteStates.waiting_for_video)
 async def video_note_cancel(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    prev_menu_message_id = data.get("video_note_menu_message_id")
+    wait_message_id = data.get("video_note_wait_message_id")
     await state.clear()
-    try:
-        await call.message.delete()
-    except Exception:
-        pass
-    await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+
+    new_menu = await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+
+    if wait_message_id:
+        try:
+            await bot.delete_message(call.message.chat.id, int(wait_message_id))
+        except Exception:
+            pass
+    else:
+        try:
+            await call.message.delete()
+        except Exception:
+            pass
+
+    if prev_menu_message_id and int(prev_menu_message_id) != int(new_menu.message_id):
+        try:
+            await bot.delete_message(call.message.chat.id, int(prev_menu_message_id))
+        except Exception:
+            pass
+
     await call.answer()
 
 @dp.callback_query(F.data == "stickers_my")
