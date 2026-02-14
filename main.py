@@ -6,6 +6,7 @@ import base64
 import zipfile
 import re
 import subprocess
+import shutil
 from PIL import Image
 from datetime import datetime, timezone
 from aiogram import Bot, Dispatcher, F
@@ -314,8 +315,16 @@ async def animate_loading(message: Message, stop_event: asyncio.Event):
             continue
 
 def convert_video_to_note(input_path: str, output_path: str):
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        try:
+            import imageio_ffmpeg
+            ffmpeg_bin = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as exc:
+            raise FileNotFoundError("ffmpeg executable not found") from exc
+
     command = [
-        "ffmpeg",
+        ffmpeg_bin,
         "-y",
         "-i", input_path,
         "-t", "59",
