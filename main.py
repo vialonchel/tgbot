@@ -176,7 +176,7 @@ def find_theme_preview(folder: str, theme_name: str) -> str | None:
 def sticker_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="📂 Мои стикеры", callback_data="stickers_my"),
+            InlineKeyboardButton(text="📂 Мои стикерпаки", callback_data="stickers_my"),
             InlineKeyboardButton(text="✂️ Создать стикеры", callback_data="stickers_create")
         ],
         [InlineKeyboardButton(text="🎲 Случайный стикерпак", callback_data="stickers_random")],
