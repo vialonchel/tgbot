@@ -270,12 +270,11 @@ def add_group_keyboard():
 @dp.message(Command("start"))
 async def start(message: Message):
     args = message.text.split(maxsplit=1)
-    if message.chat.type in ("group", "supergroup"):
-        if len(args) > 1 and args[1] == "temki":
-            await message.answer(
-                "У меня есть команды которые ты можешь использовать в групповом чате 😋 \n\nМои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
-                reply_markup=bot_link_keyboard()
-            )
+    if message.chat.type == "private":
+        await message.answer(
+            "У меня есть команды которые ты можешь использовать в групповом чате 😋 \n\nМои команды:\n/randomtheme - 🔖 Рандомная тема\n/randomlanguage - 📝 Рандомный язык",
+            reply_markup=bot_link_keyboard()
+        )
         return
     
     campaign = args[1] if len(args) > 1 else "organic"
@@ -294,7 +293,10 @@ async def start(message: Message):
         await message.answer(START_MENU_TEXT, reply_markup=menu_keyboard())
     else:
         await message.answer("❣️ Подпишись:", reply_markup=subscribe_keyboard())
-    await message.delete()
+    try:
+        await message.delete()
+    except Exception:
+        pass
 
 @dp.message(Command("admin"))
 async def admin(message: Message):
