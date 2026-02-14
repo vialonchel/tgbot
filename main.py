@@ -4,6 +4,7 @@ import json
 import os
 import base64
 import zipfile
+import re
 from PIL import Image
 from datetime import datetime, timezone
 from aiogram import Bot, Dispatcher, F
@@ -36,6 +37,7 @@ if not BOT_TOKEN:
     raise RuntimeError("Environment variable BOT_TOKEN is required")
 CHANNEL_USERNAME = "@wursix"
 USERS_FILE = "users.json"
+STICKER_PACKS_FILE = "stickerpacks.json"
 ADMINS = {913949366}
 BOT_USERNAME = "TT_temki_bot"
 GROUP_START_IMAGE = "groupstart.jpg"
@@ -107,6 +109,15 @@ def load_languages():
     with open("languages.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
+def load_stickerpacks():
+    if not os.path.exists(STICKER_PACKS_FILE):
+        return {"packs": []}
+    with open(STICKER_PACKS_FILE, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    if "packs" not in data or not isinstance(data["packs"], list):
+        return {"packs": []}
+    return data
+
 languages_db = load_languages()
 SLUG_TO_LANG_CATEGORY = {cat["slug"]: cat["name"] for cat in languages_db["categories"]}
 ALL_LANG_CATEGORIES = languages_db["categories"]  # Для пагинации языковых категорий
@@ -172,6 +183,38 @@ def sticker_menu_keyboard() -> InlineKeyboardMarkup:
 def make_sticker_pack_name(user_id: int, seq: int) -> str:
     return f"u{user_id}_{seq}_by_{BOT_USERNAME.lower()}"
 
+def parse_pack_name(pack: dict) -> str | None:
+    raw_name = str(pack.get("name", "")).strip()
+    if raw_name:
+        return raw_name
+    link = str(pack.get("link", "")).strip()
+    if not link:
+        return None
+    m = re.search(r"(?:https?://)?(?:t\.me|telegram\.me)/addstickers/([A-Za-z0-9_]+)", link)
+    if m:
+        return m.group(1)
+    m = re.search(r"^addstickers/([A-Za-z0-9_]+)$", link)
+    if m:
+        return m.group(1)
+    return None
+
+def pack_install_link(pack: dict, pack_name: str) -> str:
+    link = str(pack.get("link", "")).strip()
+    if link.startswith("http://") or link.startswith("https://"):
+        return link
+    if link.startswith("t.me/") or link.startswith("telegram.me/"):
+        return f"https://{link}"
+    return f"https://t.me/addstickers/{pack_name}"
+
+def random_sticker_keyboard(install_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="установить", url=install_url),
+            InlineKeyboardButton(text="вперед", callback_data="stickers_random_next")
+        ],
+        [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
+    ])
+
 def build_sticker_png(source_path: str, output_path: str):
     with Image.open(source_path) as img:
         img = img.convert("RGBA")
@@ -210,6 +253,38 @@ async def create_sticker_set(user_id: int, pack_name: str, pack_title: str, png_
 async def add_sticker_to_pack(user_id: int, pack_name: str, png_path: str):
     sticker = InputSticker(sticker=FSInputFile(png_path), emoji_list=["💞"], format="static")
     await bot.add_sticker_to_set(user_id=user_id, name=pack_name, sticker=sticker)
+
+async def send_random_sticker_from_catalog(chat_id: int) -> bool:
+    catalog = load_stickerpacks()
+    packs = catalog.get("packs", [])
+    valid_packs = []
+    for pack in packs:
+        if not isinstance(pack, dict):
+            continue
+        pack_name = parse_pack_name(pack)
+        if not pack_name:
+            continue
+        valid_packs.append((pack, pack_name, pack_install_link(pack, pack_name)))
+
+    if not valid_packs:
+        return False
+
+    random.shuffle(valid_packs)
+    for pack, pack_name, install_url in valid_packs:
+        try:
+            sticker_set = await bot.get_sticker_set(pack_name)
+            if not sticker_set.stickers:
+                continue
+            sticker = random.choice(sticker_set.stickers)
+            await bot.send_sticker(
+                chat_id=chat_id,
+                sticker=sticker.file_id,
+                reply_markup=random_sticker_keyboard(install_url)
+            )
+            return True
+        except Exception:
+            continue
+    return False
 # =========================
 # КЛАВИАТУРЫ
 # =========================
@@ -748,19 +823,23 @@ async def stickers_my(call: CallbackQuery):
 async def stickers_random(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
-    all_packs = db.get("sticker_packs", [])
-    if not all_packs:
-        await call.answer("Пока нет ни одного стикерпака", show_alert=True)
+    sent = await send_random_sticker_from_catalog(call.from_user.id)
+    if not sent:
+        await call.answer("Добавь стикерпаки в stickerpacks.json", show_alert=True)
         return
-    pack = random.choice(all_packs)
-    pack_name = pack.get("name") if isinstance(pack, dict) else str(pack)
-    if not pack_name:
-        await call.answer("Пока нет ни одного стикерпака", show_alert=True)
+    await call.answer()
+
+@dp.callback_query(F.data == "stickers_random_next")
+async def stickers_random_next(call: CallbackQuery):
+    if not await ensure_subscribed(call.from_user.id):
         return
-    await bot.send_message(
-        call.from_user.id,
-        f"Случайный стикерпак:\nhttps://t.me/addstickers/{pack_name}"
-    )
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    sent = await send_random_sticker_from_catalog(call.from_user.id)
+    if not sent:
+        await bot.send_message(call.from_user.id, "Добавь стикерпаки в stickerpacks.json")
     await call.answer()
 
 @dp.callback_query(F.data == "stickers_create")
