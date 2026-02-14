@@ -173,10 +173,10 @@ def find_theme_preview(folder: str, theme_name: str) -> str | None:
 def sticker_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="мои стикеры", callback_data="stickers_my"),
-            InlineKeyboardButton(text="создать стикеры", callback_data="stickers_create")
+            InlineKeyboardButton(text="📂 мои стикеры", callback_data="stickers_my"),
+            InlineKeyboardButton(text="✂️ создать стикеры", callback_data="stickers_create")
         ],
-        [InlineKeyboardButton(text="случайный стикерпак", callback_data="stickers_random")],
+        [InlineKeyboardButton(text="🎲 случайный стикерпак", callback_data="stickers_random")],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
     ])
 
@@ -209,8 +209,8 @@ def pack_install_link(pack: dict, pack_name: str) -> str:
 def random_sticker_keyboard(install_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="установить", url=install_url),
-            InlineKeyboardButton(text="вперед", callback_data="stickers_random_next")
+            InlineKeyboardButton(text="📥 установить", url=install_url),
+            InlineKeyboardButton(text="▶️ вперед", callback_data="stickers_random_next")
         ],
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
     ])
@@ -296,11 +296,11 @@ def subscribe_keyboard():
 def menu_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="темки", callback_data="themes"),
-            InlineKeyboardButton(text="язычки", callback_data="languages"),
-            InlineKeyboardButton(text="стикеры", callback_data="stickers")
+            InlineKeyboardButton(text="🎨 темки", callback_data="themes"),
+            InlineKeyboardButton(text="🗣️ язычки", callback_data="languages"),
+            InlineKeyboardButton(text="🧩 стикеры", callback_data="stickers")
         ],
-        [InlineKeyboardButton(text="сделать тему из фото", callback_data="make_theme_photo")]
+        [InlineKeyboardButton(text="🖼️ сделать тему из фото", callback_data="make_theme_photo")]
         # [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]  # временно отключено
     ])
 def admin_keyboard():
@@ -326,12 +326,12 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     end = min(start + THEMES_PER_PAGE, total)
     page_cats = ALL_THEME_CATEGORIES[start:end]
     for i in range(0, len(page_cats), 3):
-        row = [InlineKeyboardButton(text=name, callback_data=f"category_{device}_{slug}") for name, slug in page_cats[i:i+3]]
+        row = [InlineKeyboardButton(text=f"🗂️ {name}", callback_data=f"category_{device}_{slug}") for name, slug in page_cats[i:i+3]]
         kb.row(*row)
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"cat_page_{device}_{page-1}"))
-    nav.append(InlineKeyboardButton(text=f"{page+1}/{(total // THEMES_PER_PAGE) + 1}", callback_data="noop"))
+    nav.append(InlineKeyboardButton(text=f"📄 {page+1}/{(total // THEMES_PER_PAGE) + 1}", callback_data="noop"))
     if end < total:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"cat_page_{device}_{page+1}"))
     kb.row(*nav)
@@ -348,7 +348,7 @@ def themes_keyboard_for_category(device: str, category: str) -> InlineKeyboardMa
         if file.startswith(".") or file.endswith("_preview.jpg") or not file.endswith(ext):
             continue
         filename_no_ext = os.path.splitext(file)[0]
-        kb.add(InlineKeyboardButton(text=filename_no_ext, callback_data=f"install_{device}_{category}_{filename_no_ext}"))
+        kb.add(InlineKeyboardButton(text=f"📦 {filename_no_ext}", callback_data=f"install_{device}_{category}_{filename_no_ext}"))
     kb.add(InlineKeyboardButton(text="⬅️ Назад к категориям", callback_data=f"back_to_categories_{device}"))
     # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
@@ -359,18 +359,18 @@ def languages_categories_keyboard(page: int = 0) -> InlineKeyboardMarkup:
     end = min(start + LANG_PER_PAGE, total)
     page_cats = ALL_LANG_CATEGORIES[start:end]
     for i in range(0, len(page_cats), 3):
-        row = [InlineKeyboardButton(text=cat["name"], callback_data=f"lang_category_{cat['slug']}") for cat in page_cats[i:i+3]]
+        row = [InlineKeyboardButton(text=f"🗂️ {cat['name']}", callback_data=f"lang_category_{cat['slug']}") for cat in page_cats[i:i+3]]
         kb.row(*row)
     
     nav = []
     total_pages = max(1, (total + LANG_PER_PAGE - 1) // LANG_PER_PAGE)
     if page > 0:
         nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"lang_cat_page_{page-1}"))
-    nav.append(InlineKeyboardButton(text=f"{page+1}/{total_pages}", callback_data="noop"))
+    nav.append(InlineKeyboardButton(text=f"📄 {page+1}/{total_pages}", callback_data="noop"))
     if end < total:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_cat_page_{page+1}"))
     kb.row(*nav)
-    kb.row(InlineKeyboardButton(text="рандомный язык", callback_data="random_language"))
+    kb.row(InlineKeyboardButton(text="🎲 рандомный язык", callback_data="random_language"))
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
@@ -385,15 +385,15 @@ def languages_pagination_keyboard(category_slug: str, page: int = 0) -> InlineKe
     page = max(0, min(page, total - 1))
     current_lang = langs[page]
     kb = InlineKeyboardBuilder()
-    kb.row(InlineKeyboardButton(text="Установить", url=current_lang["link"]))
+    kb.row(InlineKeyboardButton(text="📥 Установить", url=current_lang["link"]))
     nav = []
     if page > 0:
         nav.append(InlineKeyboardButton(text="◀️ Назад", callback_data=f"lang_page_{category_slug}_{page-1}"))
-    nav.append(InlineKeyboardButton(text=f"{page+1}/{total}", callback_data="noop"))
+    nav.append(InlineKeyboardButton(text=f"📄 {page+1}/{total}", callback_data="noop"))
     if page < total - 1:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"lang_page_{category_slug}_{page+1}"))
     kb.row(*nav)
-    kb.row(InlineKeyboardButton(text="⬅️ К категориям", callback_data="languages"))
+    kb.row(InlineKeyboardButton(text="📚 ⬅️ К категориям", callback_data="languages"))
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
@@ -505,7 +505,7 @@ async def random_language(message: Message):
         return
     lang = random.choice(langs)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Установить", url=lang["link"])]
+        [InlineKeyboardButton(text="📥 Установить", url=lang["link"])]
     ])
     await message.answer(f"Случайный язык: {lang['name']}", reply_markup=kb)
 
@@ -975,7 +975,7 @@ async def random_language_callback(call: CallbackQuery):
     lang = random.choice(langs)
     description = lang.get('description', '')
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Установить", url=lang["link"])]
+        [InlineKeyboardButton(text="📥 Установить", url=lang["link"])]
     ])
     await bot.send_message(call.from_user.id, f"Случайный язык: {lang['name']}\n{description}", reply_markup=kb)
     try:
