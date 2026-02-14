@@ -5,6 +5,7 @@ import os
 import base64
 import zipfile
 import re
+import subprocess
 from PIL import Image
 from datetime import datetime, timezone
 from aiogram import Bot, Dispatcher, F
@@ -62,6 +63,8 @@ class CustomThemeStates(StatesGroup):
     waiting_for_device = State()
 class StickerStates(StatesGroup):
     waiting_for_source = State()
+class VideoNoteStates(StatesGroup):
+    waiting_for_video = State()
 # =========================
 # ХРАНИЛИЩЕ
 # =========================
@@ -215,6 +218,16 @@ def random_sticker_keyboard(install_url: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu")]
     ])
 
+def video_note_request_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ отменить", callback_data="video_note_cancel")]
+    ])
+
+def video_note_result_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➡️ кружок из видео", url=f"https://t.me/{BOT_USERNAME}")]
+    ])
+
 def build_sticker_png(source_path: str, output_path: str):
     with Image.open(source_path) as img:
         img = img.convert("RGBA")
@@ -285,6 +298,36 @@ async def send_random_sticker_from_catalog(chat_id: int) -> bool:
         except Exception:
             continue
     return False
+
+async def animate_loading(message: Message, stop_event: asyncio.Event):
+    dots = [".", "..", "..."]
+    idx = 0
+    while not stop_event.is_set():
+        try:
+            await message.edit_text(f"загрузка{dots[idx]}")
+        except Exception:
+            return
+        idx = (idx + 1) % len(dots)
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+
+def convert_video_to_note(input_path: str, output_path: str):
+    command = [
+        "ffmpeg",
+        "-y",
+        "-i", input_path,
+        "-t", "59",
+        "-vf", "crop='min(iw,ih)':'min(iw,ih)',scale=512:512",
+        "-an",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 # =========================
 # КЛАВИАТУРЫ
 # =========================
@@ -300,6 +343,7 @@ def menu_keyboard():
             InlineKeyboardButton(text="🗣️ язычки", callback_data="languages"),
             InlineKeyboardButton(text="🧩 стикеры", callback_data="stickers")
         ],
+        [InlineKeyboardButton(text="🎬 кружок из видео", callback_data="video_note_menu")],
         [InlineKeyboardButton(text="🖼️ сделать тему из фото", callback_data="make_theme_photo")]
         # [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]  # временно отключено
     ])
@@ -806,6 +850,29 @@ async def stickers_menu(call: CallbackQuery):
     ensure_user(call.from_user)
     await call.message.edit_text("Стикеры:", reply_markup=sticker_menu_keyboard())
 
+@dp.callback_query(F.data == "video_note_menu")
+async def video_note_menu(call: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    ensure_user(call.from_user)
+    await state.set_state(VideoNoteStates.waiting_for_video)
+    await bot.send_message(
+        call.from_user.id,
+        "Пришли видео, и я сделаю из него кружок.",
+        reply_markup=video_note_request_keyboard()
+    )
+    await call.answer()
+
+@dp.callback_query(F.data == "video_note_cancel", VideoNoteStates.waiting_for_video)
+async def video_note_cancel(call: CallbackQuery, state: FSMContext):
+    await state.clear()
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+    await call.answer()
+
 @dp.callback_query(F.data == "stickers_my")
 async def stickers_my(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
@@ -855,6 +922,66 @@ async def stickers_create(call: CallbackQuery, state: FSMContext):
     )
     await state.set_state(StickerStates.waiting_for_source)
     await call.answer()
+
+@dp.message(VideoNoteStates.waiting_for_video, F.video | F.document)
+async def process_video_note_source(message: Message, state: FSMContext):
+    if not await ensure_subscribed(message.from_user.id):
+        await state.clear()
+        return
+
+    uid = str(message.from_user.id)
+    input_path = f"video_src_{uid}_{random.randint(1000, 9999)}.mp4"
+    output_path = f"video_note_{uid}_{random.randint(1000, 9999)}.mp4"
+    loading_message = await message.answer("загрузка.")
+    stop_event = asyncio.Event()
+    animation_task = asyncio.create_task(animate_loading(loading_message, stop_event))
+
+    try:
+        file = None
+        if message.video:
+            file = await bot.get_file(message.video.file_id)
+        elif message.document:
+            mime = (message.document.mime_type or "").lower()
+            if not mime.startswith("video/"):
+                await message.answer("Пришли видео (не изображение и не архив).")
+                return
+            file = await bot.get_file(message.document.file_id)
+
+        if not file:
+            await message.answer("Пришли видео.")
+            return
+
+        await bot.download_file(file.file_path, input_path)
+        convert_video_to_note(input_path, output_path)
+
+        await bot.send_video_note(
+            chat_id=message.from_user.id,
+            video_note=FSInputFile(output_path),
+            reply_markup=video_note_result_keyboard()
+        )
+        await state.clear()
+        await bot.send_message(message.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+    except FileNotFoundError:
+        await message.answer("Не найден ffmpeg. Добавь его в Railway сборку.")
+    except Exception:
+        await message.answer("Не удалось сделать кружок из этого видео. Попробуй другое.")
+    finally:
+        stop_event.set()
+        try:
+            await animation_task
+        except Exception:
+            pass
+        try:
+            await loading_message.delete()
+        except Exception:
+            pass
+        for path in (input_path, output_path):
+            if os.path.exists(path):
+                os.remove(path)
+
+@dp.message(VideoNoteStates.waiting_for_video)
+async def process_video_note_source_invalid(message: Message):
+    await message.answer("Пришли видео файлом или обычным видео сообщением.")
 
 @dp.message(StickerStates.waiting_for_source, F.photo | F.document)
 async def process_sticker_source(message: Message, state: FSMContext):
