@@ -957,9 +957,6 @@ async def install_theme(call: CallbackQuery):
     ext = theme_extension(device)
     base_dir = os.path.join(resolve_device_folder(device), category)
     theme_file = os.path.join(base_dir, f"{filename}{ext}")
-    preview_file = find_theme_preview(base_dir, filename)
-    if preview_file:
-        await bot.send_photo(call.from_user.id, photo=FSInputFile(preview_file), caption="📌 Предпросмотр темы")
     if os.path.exists(theme_file):
         await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
                                 caption="Нажми для установки!\n\nТема создана в @TT_temki_bot 😉")
