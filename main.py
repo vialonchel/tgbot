@@ -174,6 +174,81 @@ def find_theme_preview(folder: str, theme_name: str) -> str | None:
         return legacy_preview
     return None
 
+def get_themes_page_data(device: str, category_slug: str, page: int = 0) -> tuple[dict | None, str | None]:
+    category = SLUG_TO_CATEGORY.get(category_slug)
+    if not category:
+        return None, "❌ Категория не найдена"
+
+    folder = os.path.join(resolve_device_folder(device), category)
+    if not os.path.exists(folder):
+        return None, "❌ Темы не найдены"
+
+    ext = theme_extension(device)
+    themes = sorted(
+        [
+            os.path.splitext(file)[0]
+            for file in os.listdir(folder)
+            if not file.startswith(".") and file.endswith(ext)
+        ]
+    )
+    if not themes:
+        return None, "❌ Темы не найдены"
+
+    total_pages = len(themes)
+    page = max(0, min(page, total_pages - 1))
+    current_theme = themes[page]
+    return {
+        "category": category,
+        "folder": folder,
+        "themes": themes,
+        "page": page,
+        "total_pages": total_pages,
+        "current_theme": current_theme,
+        "preview_file": find_theme_preview(folder, current_theme),
+    }, None
+
+async def replace_message_with_text(call: CallbackQuery, text: str, markup: InlineKeyboardMarkup):
+    try:
+        await call.message.edit_text(text, reply_markup=markup)
+        return
+    except Exception:
+        pass
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(call.from_user.id, text, reply_markup=markup)
+
+async def show_theme_page(call: CallbackQuery, device: str, category_slug: str, page: int = 0):
+    page_data, error_text = get_themes_page_data(device, category_slug, page)
+    if error_text:
+        await call.answer(error_text, show_alert=True)
+        return
+
+    caption = f"🎨 {page_data['category']}\n\n📦 {page_data['current_theme']}"
+    markup = themes_keyboard_for_category(device, category_slug, page_data["page"])
+    preview_file = page_data["preview_file"]
+
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    if preview_file:
+        await bot.send_photo(
+            call.from_user.id,
+            photo=FSInputFile(preview_file),
+            caption=caption,
+            reply_markup=markup
+        )
+    else:
+        await bot.send_message(
+            call.from_user.id,
+            text=caption,
+            reply_markup=markup
+        )
+    await call.answer()
+
 def sticker_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -455,40 +530,17 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     return kb.as_markup()
 def themes_keyboard_for_category(device: str, category_slug: str, page: int = 0) -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
-    category = SLUG_TO_CATEGORY.get(category_slug)
-    if not category:
+    page_data, _ = get_themes_page_data(device, category_slug, page)
+    if not page_data:
         return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Категория не найдена", callback_data=f"back_to_categories_{device}")]])
 
-    folder = os.path.join(resolve_device_folder(device), category)
-    if not os.path.exists(folder):
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
-    ext = theme_extension(device)
-    themes = sorted(
-        [
-            os.path.splitext(file)[0]
-            for file in os.listdir(folder)
-            if not file.startswith(".") and file.endswith(ext)
-        ]
-    )
-    if not themes:
-        return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ Темы не найдены", callback_data=f"back_to_categories_{device}")]])
-
-    total = len(themes)
-    total_pages = max(1, (total + THEMES_IN_CATEGORY_PER_PAGE - 1) // THEMES_IN_CATEGORY_PER_PAGE)
-    page = max(0, min(page, total_pages - 1))
-    start = page * THEMES_IN_CATEGORY_PER_PAGE
-    end = min(start + THEMES_IN_CATEGORY_PER_PAGE, total)
-    page_themes = themes[start:end]
-
-    for i in range(0, len(page_themes), 3):
-        row = [
-            InlineKeyboardButton(
-                text=f"📦 {filename_no_ext}",
-                callback_data=f"install|{device}|{category_slug}|{filename_no_ext}"
-            )
-            for filename_no_ext in page_themes[i:i+3]
-        ]
-        kb.row(*row)
+    page = page_data["page"]
+    total_pages = page_data["total_pages"]
+    current_theme = page_data["current_theme"]
+    kb.row(InlineKeyboardButton(
+        text="📥 Установить",
+        callback_data=f"install|{device}|{category_slug}|{current_theme}"
+    ))
 
     nav = []
     if page > 0:
@@ -790,7 +842,8 @@ async def process_bg_device(call: CallbackQuery, state: FSMContext):
 
 @dp.callback_query(F.data == "back_menu")
 async def back_menu(call: CallbackQuery):
-    await call.message.edit_text(REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+    await replace_message_with_text(call, REPEAT_MENU_TEXT, menu_keyboard())
+    await call.answer()
 
 @dp.callback_query(F.data.startswith("device_"))
 async def select_device(call: CallbackQuery):
@@ -817,11 +870,7 @@ async def select_category(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     _, device, slug = call.data.split("_", 2)
-    category = SLUG_TO_CATEGORY.get(slug)
-    if not category:
-        await call.answer("❌ Категория не найдена")
-        return
-    await call.message.edit_text(f"🎨 {category}:", reply_markup=themes_keyboard_for_category(device, slug, page=0))
+    await show_theme_page(call, device, slug, page=0)
 
 @dp.callback_query(F.data.startswith("theme_page|"))
 async def paginate_themes_in_category(call: CallbackQuery):
@@ -833,11 +882,7 @@ async def paginate_themes_in_category(call: CallbackQuery):
     except (ValueError, IndexError):
         await call.answer("❌ Ошибка пагинации", show_alert=True)
         return
-    category = SLUG_TO_CATEGORY.get(slug)
-    if not category:
-        await call.answer("❌ Категория не найдена", show_alert=True)
-        return
-    await call.message.edit_text(f"🎨 {category}:", reply_markup=themes_keyboard_for_category(device, slug, page=page))
+    await show_theme_page(call, device, slug, page=page)
 
 @dp.callback_query(F.data.startswith("back_to_devices_"))
 async def back_to_devices(call: CallbackQuery):
@@ -851,7 +896,8 @@ async def back_to_categories(call: CallbackQuery):
     if not await ensure_subscribed(call.from_user.id):
         return
     device = call.data.replace("back_to_categories_", "")
-    await call.message.edit_text("Выбери категорию:", reply_markup=categories_keyboard(device))
+    await replace_message_with_text(call, "Выбери категорию:", categories_keyboard(device))
+    await call.answer()
 
 @dp.callback_query(F.data == "themes")
 async def choose_device(call: CallbackQuery):
