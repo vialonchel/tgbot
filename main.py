@@ -2,7 +2,6 @@ import asyncio
 import random
 import json
 import os
-import base64
 import zipfile
 import re
 import subprocess
@@ -238,6 +237,44 @@ def build_sticker_png(source_path: str, output_path: str):
         offset = ((512 - img.width) // 2, (512 - img.height) // 2)
         canvas.paste(img, offset, img)
         canvas.save(output_path, "PNG")
+
+def build_wallpaper_jpg(source_path: str, output_path: str):
+    with Image.open(source_path) as img:
+        img = img.convert("RGB")
+        resampling = getattr(Image, "Resampling", Image).LANCZOS
+        max_side = 1440
+        if max(img.width, img.height) > max_side:
+            img.thumbnail((max_side, max_side), resampling)
+        img.save(output_path, "JPEG", quality=82, optimize=True, progressive=True)
+
+def build_attheme_with_wallpaper(wallpaper_path: str, theme_path: str):
+    # Лёгкая цветовая схема + встроенный wallpaper JPEG через wallpaperFileOffset.
+    lines = [
+        "dialogBackground=-1",
+        "dialogBackgroundGray=-1",
+        "dialogTextBlack=-16777216",
+        "dialogTextLink=-12732993",
+        "dialogTextBlue=-12732993",
+        "chat_inBubble=-1",
+        "chat_outBubble=-12862209",
+        "chat_outBubbleSelected=-14110905",
+        "chat_messageTextIn=-16777216",
+        "chat_messageTextOut=-1",
+        "chat_serviceText=-1",
+    ]
+
+    offset = 0
+    while True:
+        header = f"wallpaperFileOffset={offset}\n" + "\n".join(lines) + "\n"
+        new_offset = len(header.encode("utf-8"))
+        if new_offset == offset:
+            break
+        offset = new_offset
+
+    with open(theme_path, "wb") as theme_f:
+        theme_f.write(header.encode("utf-8"))
+        with open(wallpaper_path, "rb") as wall_f:
+            theme_f.write(wall_f.read())
 
 def register_sticker_pack(uid: str, name: str, title: str):
     if name not in db["users"][uid]["sticker_packs"]:
@@ -603,34 +640,39 @@ async def process_bg_device(call: CallbackQuery, state: FSMContext):
         await call.answer("Ошибка с фото.")
         await state.clear()
         return
-    # Конвертируем в PNG для base64
-    png_path = "temp_bg.png"
-    with Image.open(photo_path) as img:
-        img.save(png_path, "PNG")
-    with open(png_path, "rb") as f:
-        bg_base64 = base64.b64encode(f.read()).decode("utf-8")
-    theme_file = f"custom_bg{theme_extension(device) or '.attheme'}"
+    uid = str(call.from_user.id)
+    wallpaper_jpg = f"temp_bg_{uid}.jpg"
+
+    build_wallpaper_jpg(photo_path, wallpaper_jpg)
+
+    if device == "windows":
+        theme_file = "custom_bg.tgdesktop-theme"
+    elif device == "ios":
+        theme_file = "custom_bg.tgios-theme"
+    else:
+        theme_file = "custom_bg.attheme"
+
+    palette_file = None
     if device == "windows":
         # Для desktop - zip с background.jpg и palette.tdesktop-palette (пустой)
-        palette_content = ""  # Пустая палитра
-        with open("palette.tdesktop-palette", "w") as p:
+        palette_content = ""
+        palette_file = "palette.tdesktop-palette"
+        with open(palette_file, "w", encoding="utf-8") as p:
             p.write(palette_content)
         with zipfile.ZipFile(theme_file, "w") as zipf:
-            zipf.write("temp_bg.jpg", "background.jpg")
-            zipf.write("palette.tdesktop-palette", "tiled.png")  # Или background.jpg, but for wallpaper
-        os.remove("palette.tdesktop-palette")
+            zipf.write(wallpaper_jpg, "background.jpg")
+            zipf.write(palette_file, "tiled.png")  # Оставляем текущее поведение.
     else:
-        # Для Android/iOS - text with wallpaper base64
-        theme_content = f"wallPaper={bg_base64}\n"
-        with open(theme_file, "w") as f:
-            f.write(theme_content)
+        build_attheme_with_wallpaper(wallpaper_jpg, theme_file)
     
     await bot.send_document(call.from_user.id, document=FSInputFile(theme_file),
                             caption="Вот тема с твоим фото на фоне! Установи её.")
     await asyncio.sleep(0.5)
     await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
     os.remove(photo_path)
-    os.remove(png_path)
+    os.remove(wallpaper_jpg)
+    if palette_file and os.path.exists(palette_file):
+        os.remove(palette_file)
     os.remove(theme_file)
     await state.clear()
     await call.answer()
