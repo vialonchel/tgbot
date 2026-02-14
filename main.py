@@ -449,6 +449,7 @@ def categories_keyboard(device: str, page: int = 0) -> InlineKeyboardMarkup:
     if end < total:
         nav.append(InlineKeyboardButton(text="▶️ Вперед", callback_data=f"cat_page_{device}_{page+1}"))
     kb.row(*nav)
+    kb.row(InlineKeyboardButton(text="🎲 Рандомная тема", callback_data=f"random_theme_{device}"))
     kb.row(InlineKeyboardButton(text="🏠 В меню", callback_data="back_menu"))
     # kb.row(InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group"))  # временно отключено
     return kb.as_markup()
@@ -860,6 +861,8 @@ async def choose_device(call: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("random_theme_"))
 async def random_theme_callback(call: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(call.from_user.id):
+        return
     device = call.data.replace("random_theme_", "")
     category_row = random.choice(CATEGORIES)
     _, category_slug = random.choice(category_row)
@@ -884,6 +887,12 @@ async def random_theme_callback(call: CallbackQuery, state: FSMContext):
                                 caption="Нажми для установки случайной темы!\n\nТема создана в @TT_temki_bot 😉")
     else:
         await call.answer("❌ Файл темы не найден", show_alert=True)
+        return
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+    await bot.send_message(call.from_user.id, "Выбери категорию:", reply_markup=categories_keyboard(device))
     await call.answer()
 
 @dp.callback_query(F.data.startswith("install|"))
