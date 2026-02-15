@@ -151,6 +151,7 @@ def menu_keyboard():
             [InlineKeyboardButton(text="🎬 Кружок из видео", callback_data="video_note_menu")],
             [InlineKeyboardButton(text="🖼️ Сделать тему из фото", callback_data="make_theme_photo")],
             [InlineKeyboardButton(text="🔤 Изменить шрифт", callback_data="font_menu")],
+            [InlineKeyboardButton(text="❓ F.A.Q", url="https://telegra.ph/Otvety-na-voprosy-02-15-3")],
         ]
     )
 
