@@ -66,6 +66,9 @@ class StickerStates(StatesGroup):
     waiting_for_source = State()
 class VideoNoteStates(StatesGroup):
     waiting_for_video = State()
+class FontStates(StatesGroup):
+    waiting_for_text = State()
+    waiting_for_font_choice = State()
 # =========================
 # ХРАНИЛИЩЕ
 # =========================
@@ -326,6 +329,36 @@ def video_note_result_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="➡️ Кружок из видео", url=f"https://t.me/{BOT_USERNAME}")]
     ])
 
+def font_wait_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="font_cancel")]
+    ])
+
+def font_styles_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="𝐴𝑏𝑐 Курсив", callback_data="font_pick_math_italic"),
+            InlineKeyboardButton(text="𝐀𝐛𝐜 Жирный", callback_data="font_pick_math_bold")
+        ],
+        [
+            InlineKeyboardButton(text="𝑨𝒃𝒄 Жирный курсив", callback_data="font_pick_math_bold_italic"),
+            InlineKeyboardButton(text="𝖠𝖻𝖼 Sans", callback_data="font_pick_sans")
+        ],
+        [
+            InlineKeyboardButton(text="𝗔𝗯𝗰 Sans жирный", callback_data="font_pick_sans_bold"),
+            InlineKeyboardButton(text="𝘈𝘣𝘤 Sans курсив", callback_data="font_pick_sans_italic")
+        ],
+        [
+            InlineKeyboardButton(text="𝘼𝗯𝗰 Sans жирн. курсив", callback_data="font_pick_sans_bold_italic"),
+            InlineKeyboardButton(text="𝙰𝚋𝚌 Моно", callback_data="font_pick_monospace")
+        ],
+        [
+            InlineKeyboardButton(text="𝔸𝕓𝕔 Двойной", callback_data="font_pick_double_struck"),
+            InlineKeyboardButton(text="Ａｂｃ Fullwidth", callback_data="font_pick_fullwidth")
+        ],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data="font_cancel")]
+    ])
+
 def build_sticker_png(source_path: str, output_path: str):
     with Image.open(source_path) as img:
         img = img.convert("RGBA")
@@ -350,6 +383,83 @@ def extract_sticker_pack_title(raw_text: str | None) -> str | None:
     if not text:
         return None
     return text[:64]
+
+def build_font_map(
+    upper: str | None = None,
+    lower: str | None = None,
+    digits: str | None = None
+) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    if upper:
+        mapping.update(dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ", upper)))
+    if lower:
+        mapping.update(dict(zip("abcdefghijklmnopqrstuvwxyz", lower)))
+    if digits:
+        mapping.update(dict(zip("0123456789", digits)))
+    return mapping
+
+FONT_MAPPINGS: dict[str, dict[str, str]] = {
+    "math_italic": build_font_map(
+        upper="𝐴𝐵𝐶𝐷𝐸𝐹𝐺𝐻𝐼𝐽𝐾𝐿𝑀𝑁𝑂𝑃𝑄𝑅𝑆𝑇𝑈𝑉𝑊𝑋𝑌𝑍",
+        lower="𝑎𝑏𝑐𝑑𝑒𝑓𝑔ℎ𝑖𝑗𝑘𝑙𝑚𝑛𝑜𝑝𝑞𝑟𝑠𝑡𝑢𝑣𝑤𝑥𝑦𝑧"
+    ),
+    "math_bold": build_font_map(
+        upper="𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙",
+        lower="𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳",
+        digits="𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗"
+    ),
+    "math_bold_italic": build_font_map(
+        upper="𝑨𝑩𝑪𝑫𝑬𝑭𝑮𝑯𝑰𝑱𝑲𝑳𝑴𝑵𝑶𝑷𝑸𝑹𝑺𝑻𝑼𝑽𝑾𝑿𝒀𝒁",
+        lower="𝒂𝒃𝒄𝒅𝒆𝒇𝒈𝒉𝒊𝒋𝒌𝒍𝒎𝒏𝒐𝒑𝒒𝒓𝒔𝒕𝒖𝒗𝒘𝒙𝒚𝒛"
+    ),
+    "sans": build_font_map(
+        upper="𝖠𝖡𝖢𝖣𝖤𝖥𝖦𝖧𝖨𝖩𝖪𝖫𝖬𝖭𝖮𝖯𝖰𝖱𝖲𝖳𝖴𝖵𝖶𝖷𝖸𝖹",
+        lower="𝖺𝖻𝖼𝖽𝖾𝖿𝗀𝗁𝗂𝗃𝗄𝗅𝗆𝗇𝗈𝗉𝗊𝗋𝗌𝗍𝗎𝗏𝗐𝗑𝗒𝗓",
+        digits="𝟢𝟣𝟤𝟥𝟦𝟧𝟨𝟩𝟪𝟫"
+    ),
+    "sans_bold": build_font_map(
+        upper="𝗔𝗕𝗖𝗗𝗘𝗙𝗚𝗛𝗜𝗝𝗞𝗟𝗠𝗡𝗢𝗣𝗤𝗥𝗦𝗧𝗨𝗩𝗪𝗫𝗬𝗭",
+        lower="𝗮𝗯𝗰𝗱𝗲𝗳𝗴𝗵𝗶𝗷𝗸𝗹𝗺𝗻𝗼𝗽𝗾𝗿𝘀𝘁𝘂𝘃𝘄𝘅𝘆𝘇",
+        digits="𝟬𝟭𝟮𝟯𝟰𝟱𝟲𝟳𝟴𝟵"
+    ),
+    "sans_italic": build_font_map(
+        upper="𝘈𝘉𝘊𝘋𝘌𝘍𝘎𝘏𝘐𝘑𝘒𝘓𝘔𝘕𝘖𝘗𝘘𝘙𝘚𝘛𝘜𝘝𝘞𝘟𝘠𝘡",
+        lower="𝘢𝘣𝘤𝘥𝘦𝘧𝘨𝘩𝘪𝘫𝘬𝘭𝘮𝘯𝘰𝘱𝘲𝘳𝘴𝘵𝘶𝘷𝘸𝘹𝘺𝘻"
+    ),
+    "sans_bold_italic": build_font_map(
+        upper="𝘼𝘽𝘾𝘿𝙀𝙁𝙂𝙃𝙄𝙅𝙆𝙇𝙈𝙉𝙊𝙋𝙌𝙍𝙎𝙏𝙐𝙑𝙒𝙓𝙔𝙕",
+        lower="𝙖𝙗𝙘𝙙𝙚𝙛𝙜𝙝𝙞𝙟𝙠𝙡𝙢𝙣𝙤𝙥𝙦𝙧𝙨𝙩𝙪𝙫𝙬𝙭𝙮𝙯"
+    ),
+    "monospace": build_font_map(
+        upper="𝙰𝙱𝙲𝙳𝙴𝙵𝙶𝙷𝙸𝙹𝙺𝙻𝙼𝙽𝙾𝙿𝚀𝚁𝚂𝚃𝚄𝚅𝚆𝚇𝚈𝚉",
+        lower="𝚊𝚋𝚌𝚍𝚎𝚏𝚐𝚑𝚒𝚓𝚔𝚕𝚖𝚗𝚘𝚙𝚚𝚛𝚜𝚝𝚞𝚟𝚠𝚡𝚢𝚣",
+        digits="𝟶𝟷𝟸𝟹𝟺𝟻𝟼𝟽𝟾𝟿"
+    ),
+    "double_struck": build_font_map(
+        upper="𝔸𝔹ℂ𝔻𝔼𝔽𝔾ℍ𝕀𝕁𝕂𝕃𝕄ℕ𝕆ℙℚℝ𝕊𝕋𝕌𝕍𝕎𝕏𝕐ℤ",
+        lower="𝕒𝕓𝕔𝕕𝕖𝕗𝕘𝕙𝕚𝕛𝕜𝕝𝕞𝕟𝕠𝕡𝕢𝕣𝕤𝕥𝕦𝕧𝕨𝕩𝕪𝕫",
+        digits="𝟘𝟙𝟚𝟛𝟜𝟝𝟞𝟟𝟠𝟡"
+    ),
+    "fullwidth": build_font_map(
+        upper="ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ",
+        lower="ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
+        digits="０１２３４５６７８９"
+    ),
+}
+
+def apply_font_style(text: str, style_id: str) -> str:
+    mapping = FONT_MAPPINGS.get(style_id)
+    if not mapping:
+        return text
+    return "".join(mapping.get(ch, ch) for ch in text)
+
+async def safe_delete_message(chat_id: int, message_id: int | None):
+    if not message_id:
+        return
+    try:
+        await bot.delete_message(chat_id, int(message_id))
+    except Exception:
+        pass
 
 def build_wallpaper_jpg(source_path: str, output_path: str):
     with Image.open(source_path) as img:
@@ -506,7 +616,8 @@ def menu_keyboard():
             InlineKeyboardButton(text="🧩 Стикеры", callback_data="stickers")
         ],
         [InlineKeyboardButton(text="🎬 Кружок из видео", callback_data="video_note_menu")],
-        [InlineKeyboardButton(text="🖼️ Сделать тему из фото", callback_data="make_theme_photo")]
+        [InlineKeyboardButton(text="🖼️ Сделать тему из фото", callback_data="make_theme_photo")],
+        [InlineKeyboardButton(text="🔤 Изменить шрифт", callback_data="font_menu")]
         # [InlineKeyboardButton(text="Добавить бота в группу", callback_data="add_to_group")]  # временно отключено
     ])
 def admin_keyboard():
@@ -1114,6 +1225,88 @@ async def video_note_menu(call: CallbackQuery, state: FSMContext):
         video_note_menu_message_id=call.message.message_id,
         video_note_wait_message_id=wait_message.message_id
     )
+    await call.answer()
+
+@dp.callback_query(F.data == "font_menu")
+async def font_menu(call: CallbackQuery, state: FSMContext):
+    if not await ensure_subscribed(call.from_user.id):
+        return
+    wait_message = await bot.send_message(
+        call.from_user.id,
+        "Отправь текст и я изменю его шрифт:",
+        reply_markup=font_wait_keyboard()
+    )
+    await state.update_data(
+        font_menu_message_id=call.message.message_id,
+        font_wait_message_id=wait_message.message_id,
+        font_source_text=None,
+        font_picker_message_id=None
+    )
+    await state.set_state(FontStates.waiting_for_text)
+    await call.answer()
+
+@dp.callback_query(F.data == "font_cancel", FontStates.waiting_for_text)
+@dp.callback_query(F.data == "font_cancel", FontStates.waiting_for_font_choice)
+async def font_cancel(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await safe_delete_message(call.message.chat.id, data.get("font_menu_message_id"))
+    await safe_delete_message(call.message.chat.id, data.get("font_wait_message_id"))
+    await safe_delete_message(call.message.chat.id, data.get("font_picker_message_id"))
+
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await state.clear()
+    await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+    await call.answer()
+
+@dp.message(FontStates.waiting_for_text, F.text)
+async def receive_text_for_font(message: Message, state: FSMContext):
+    if not await ensure_subscribed(message.from_user.id):
+        await state.clear()
+        return
+    data = await state.get_data()
+    await safe_delete_message(message.chat.id, data.get("font_menu_message_id"))
+    await safe_delete_message(message.chat.id, data.get("font_wait_message_id"))
+
+    picker_message = await bot.send_message(
+        message.from_user.id,
+        "Выбери шрифт:",
+        reply_markup=font_styles_keyboard()
+    )
+    await state.update_data(
+        font_source_text=message.text,
+        font_picker_message_id=picker_message.message_id
+    )
+    await state.set_state(FontStates.waiting_for_font_choice)
+
+@dp.message(FontStates.waiting_for_text)
+async def receive_text_for_font_invalid(message: Message):
+    await message.answer("Пришли обычный текст, который нужно преобразовать.")
+
+@dp.callback_query(F.data.startswith("font_pick_"), FontStates.waiting_for_font_choice)
+async def apply_font_to_text(call: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    source_text = data.get("font_source_text")
+    if not source_text:
+        await state.clear()
+        await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
+        await call.answer()
+        return
+    style_id = call.data.replace("font_pick_", "", 1)
+    converted = apply_font_style(source_text, style_id)
+    await bot.send_message(call.from_user.id, converted)
+
+    await safe_delete_message(call.message.chat.id, data.get("font_picker_message_id"))
+    try:
+        await call.message.delete()
+    except Exception:
+        pass
+
+    await state.clear()
+    await bot.send_message(call.from_user.id, REPEAT_MENU_TEXT, reply_markup=menu_keyboard())
     await call.answer()
 
 @dp.callback_query(F.data == "video_note_cancel", VideoNoteStates.waiting_for_video)
