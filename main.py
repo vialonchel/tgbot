@@ -773,6 +773,17 @@ async def make_theme_photo_cancel(call: CallbackQuery, state: FSMContext):
 
 @dp.message(F.photo, CustomThemeStates.waiting_for_photo)
 async def receive_photo(message: Message, state: FSMContext):
+    data = await state.get_data()
+    wait_message_id = data.get("theme_photo_wait_message_id")
+    menu_message_id = data.get("theme_photo_menu_message_id")
+
+    for msg_id in (wait_message_id, menu_message_id):
+        if msg_id:
+            try:
+                await bot.delete_message(message.chat.id, int(msg_id))
+            except Exception:
+                pass
+
     photo = message.photo[-1]
     file = await bot.get_file(photo.file_id)
     temp_photo = "temp_bg.jpg"
