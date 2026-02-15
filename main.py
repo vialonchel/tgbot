@@ -337,25 +337,38 @@ def font_wait_keyboard() -> InlineKeyboardMarkup:
 def font_styles_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="𝐴𝑏𝑐 Курсив", callback_data="font_pick_math_italic"),
-            InlineKeyboardButton(text="𝐀𝐛𝐜 Жирный", callback_data="font_pick_math_bold")
+            InlineKeyboardButton(text="абв 𝐴𝑏𝑐", callback_data="font_pick_math_italic"),
+            InlineKeyboardButton(text="абв 𝐀𝐛𝐜", callback_data="font_pick_math_bold")
         ],
         [
-            InlineKeyboardButton(text="𝑨𝒃𝒄 Жирный курсив", callback_data="font_pick_math_bold_italic"),
-            InlineKeyboardButton(text="𝖠𝖻𝖼 Sans", callback_data="font_pick_sans")
+            InlineKeyboardButton(text="абв 𝑨𝒃𝒄", callback_data="font_pick_math_bold_italic"),
+            InlineKeyboardButton(text="абв 𝖠𝖻𝖼", callback_data="font_pick_sans")
         ],
         [
-            InlineKeyboardButton(text="𝗔𝗯𝗰 Sans жирный", callback_data="font_pick_sans_bold"),
-            InlineKeyboardButton(text="𝘈𝘣𝘤 Sans курсив", callback_data="font_pick_sans_italic")
+            InlineKeyboardButton(text="абв 𝗔𝗯𝗰", callback_data="font_pick_sans_bold"),
+            InlineKeyboardButton(text="абв 𝘈𝘣𝘤", callback_data="font_pick_sans_italic")
         ],
         [
-            InlineKeyboardButton(text="𝘼𝗯𝗰 Sans жирн. курсив", callback_data="font_pick_sans_bold_italic"),
-            InlineKeyboardButton(text="𝙰𝚋𝚌 Моно", callback_data="font_pick_monospace")
+            InlineKeyboardButton(text="абв 𝘼𝗯𝗰", callback_data="font_pick_sans_bold_italic"),
+            InlineKeyboardButton(text="абв 𝙰𝚋𝚌", callback_data="font_pick_monospace")
         ],
         [
-            InlineKeyboardButton(text="𝔸𝕓𝕔 Двойной", callback_data="font_pick_double_struck"),
-            InlineKeyboardButton(text="Ａｂｃ Fullwidth", callback_data="font_pick_fullwidth")
+            InlineKeyboardButton(text="абв 𝔸𝕓𝕔", callback_data="font_pick_double_struck"),
+            InlineKeyboardButton(text="абв Ａｂｃ", callback_data="font_pick_fullwidth")
         ],
+        [
+            InlineKeyboardButton(text="абв ⓐⓑⓒ", callback_data="font_pick_circled"),
+            InlineKeyboardButton(text="абв x͛͑̓y̽̒̚z͌̕", callback_data="font_pick_combining_glitch")
+        ],
+        [
+            InlineKeyboardButton(text="абв 𝒻𝒽𝓂", callback_data="font_pick_script"),
+            InlineKeyboardButton(text="абв t̅k̅h̅", callback_data="font_pick_overline")
+        ],
+        [
+            InlineKeyboardButton(text="абв l̲k̲j̲", callback_data="font_pick_underline"),
+            InlineKeyboardButton(text="абв j̶k̶n̶", callback_data="font_pick_strikethrough")
+        ],
+        [InlineKeyboardButton(text="абв 🄳🄶🄽", callback_data="font_pick_squared")],
         [InlineKeyboardButton(text="❌ Отменить", callback_data="font_cancel")]
     ])
 
@@ -445,9 +458,45 @@ FONT_MAPPINGS: dict[str, dict[str, str]] = {
         lower="ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚ",
         digits="０１２３４５６７８９"
     ),
+    "circled": build_font_map(
+        upper="ⒶⒷⒸⒹⒺⒻⒼⒽⒾⒿⓀⓁⓂⓃⓄⓅⓆⓇⓈⓉⓊⓋⓌⓍⓎⓏ",
+        lower="ⓐⓑⓒⓓⓔⓕⓖⓗⓘⓙⓚⓛⓜⓝⓞⓟⓠⓡⓢⓣⓤⓥⓦⓧⓨⓩ",
+        digits="⓪①②③④⑤⑥⑦⑧⑨"
+    ),
+    "script": build_font_map(
+        upper="𝒜ℬ𝒞𝒟ℰℱ𝒢ℋℐ𝒥𝒦ℒℳ𝒩𝒪𝒫𝒬ℛ𝒮𝒯𝒰𝒱𝒲𝒳𝒴𝒵",
+        lower="𝒶𝒷𝒸𝒹ℯ𝒻ℊ𝒽𝒾𝒿𝓀𝓁𝓂𝓃ℴ𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏"
+    ),
+    "squared": build_font_map(
+        upper="🄰🄱🄲🄳🄴🄵🄶🄷🄸🄹🄺🄻🄼🄽🄾🄿🅀🅁🅂🅃🅄🅅🅆🅇🅈🅉",
+        lower="🄰🄱🄲🄳🄴🄵🄶🄷🄸🄹🄺🄻🄼🄽🄾🄿🅀🅁🅂🅃🅄🅅🅆🅇🅈🅉"
+    ),
 }
 
 def apply_font_style(text: str, style_id: str) -> str:
+    if style_id == "combining_glitch":
+        marks = ["͛", "͑", "̓", "̽", "̚", "̒", "̕", "͌", "͆", "͝", "͘", "͐", "̾", "̈́"]
+        out: list[str] = []
+        for i, ch in enumerate(text):
+            if ch.isspace():
+                out.append(ch)
+                continue
+            out.append(ch + marks[i % len(marks)] + marks[(i + 3) % len(marks)])
+        return "".join(out)
+    if style_id in {"overline", "underline", "strikethrough"}:
+        mark = {
+            "overline": "\u0305",
+            "underline": "\u0332",
+            "strikethrough": "\u0336",
+        }[style_id]
+        out: list[str] = []
+        for ch in text:
+            if ch.isspace():
+                out.append(ch)
+                continue
+            out.append(ch + mark)
+        return "".join(out)
+
     mapping = FONT_MAPPINGS.get(style_id)
     if not mapping:
         return text
